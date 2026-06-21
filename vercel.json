@@ -13,12 +13,7 @@
       ]
     }
   ],
-  "rewrites": [
-    {
-      "source": "/ml-api/:path*",
-      "destination": "https://ml-api.profitforce.app/:path*"
-    }
-  ],
+  "rewrites": [],
   "crons": [
     {
       "path": "/api/broker/profitforce/cron",
