@@ -1,6 +1,7 @@
 {
   "$schema": "https://openapi.vercel.sh/vercel.json",
   "name": "profitforce",
+  "productionDomain": "profitforce.vercel.app",
   "framework": "nextjs",
   "buildCommand": "npm run build",
   "installCommand": "npm install",
