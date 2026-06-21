@@ -153,7 +153,7 @@ Should return `200` with `status: "ok"`, `db.ok: true`, `env.ok: true`.
 **ACTION:** create both store listings. App identifiers are already set:
 
 - Bundle ID (iOS) / Package (Android): `com.profitforce.signals`
-- Display name: `ProfitForce-Signals`
+- Display name: `ProfitForce Trading`
 
 ---
 
