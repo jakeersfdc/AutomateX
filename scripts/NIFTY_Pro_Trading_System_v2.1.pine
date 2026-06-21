@@ -1,0 +1,532 @@
+//@version=6
+
+// NIFTY PRO TRADING SYSTEM v2.1
+// Professional-Grade Multi-Indicator Trading System
+// With Ichimoku Cloud, Stochastic RSI, ROC, and Options Analysis
+// Supports: NSE Indices (NIFTY, BANKNIFTY), Forex (EUR/GBP/JPY/AUD), Crypto (BTC)
+
+indicator(
+    title="NIFTY PRO Trading System v2.1",
+    shorttitle="NPTS v2.1",
+    overlay=true,
+    max_bars_back=500
+)
+
+// ============================================================================
+// INPUT SETTINGS
+// ============================================================================
+
+group_general = "GENERAL SETTINGS"
+i_symbol = input.string("NSE:NIFTY", "Trading Symbol", group=group_general)
+i_showPivots = input.bool(true, "Show Pivot Levels", group=group_general)
+i_showSignals = input.bool(true, "Show Buy/Sell Signals", group=group_general)
+i_showDashboard = input.bool(true, "Show Dashboard", group=group_general)
+i_showScores = input.bool(true, "Show Signal Scores", group=group_general)
+
+group_pivot = "PIVOT SETTINGS"
+i_pivotType = input.string("Camarilla", "Pivot Type", options=["Standard", "Camarilla", "Fibonacci"], group=group_pivot)
+
+group_rsi = "RSI MOMENTUM"
+i_rsiLength = input.int(14, "RSI Length", minval=5, maxval=50, group=group_rsi)
+i_rsiOverbought = input.int(70, "Overbought Level", minval=50, maxval=90, group=group_rsi)
+i_rsiOversold = input.int(30, "Oversold Level", minval=10, maxval=50, group=group_rsi)
+
+group_macd = "MACD TREND"
+i_macdFast = input.int(12, "MACD Fast", minval=5, maxval=50, group=group_macd)
+i_macdSlow = input.int(26, "MACD Slow", minval=10, maxval=100, group=group_macd)
+i_macdSignal = input.int(9, "MACD Signal", minval=3, maxval=50, group=group_macd)
+
+group_ichimoku = "ICHIMOKU CLOUD"
+i_showIchimoku = input.bool(true, "Show Ichimoku", group=group_ichimoku)
+i_tenkan = input.int(9, "Tenkan (Fast)", minval=5, maxval=30, group=group_ichimoku)
+i_kijun = input.int(26, "Kijun (Slow)", minval=10, maxval=50, group=group_ichimoku)
+i_senkou = input.int(52, "Senkou (Cloud)", minval=20, maxval=100, group=group_ichimoku)
+
+group_stoch = "STOCHASTIC RSI"
+i_showStochRSI = input.bool(true, "Show Stochastic RSI", group=group_stoch)
+i_stochLen = input.int(14, "Stoch RSI Length", minval=5, maxval=50, group=group_stoch)
+i_stochSmooth = input.int(3, "Stoch RSI Smooth", minval=1, maxval=10, group=group_stoch)
+
+group_roc = "RATE OF CHANGE"
+i_showROC = input.bool(true, "Show ROC", group=group_roc)
+i_rocLen = input.int(9, "ROC Length", minval=2, maxval=30, group=group_roc)
+i_rocStrong = input.float(1.5, "ROC Strong Threshold %", minval=0.1, maxval=5.0, group=group_roc)
+
+group_vol = "VOLUME & ATR"
+i_volMA = input.int(20, "Volume MA Period", minval=5, maxval=50, group=group_vol)
+i_atrLen = input.int(14, "ATR Length", minval=5, maxval=50, group=group_vol)
+
+group_vix = "VIX FILTER"
+i_vixEnable = input.bool(true, "Enable VIX Filter", group=group_vix)
+i_vixThreshold = input.float(25.0, "VIX High Threshold", minval=15.0, maxval=40.0, group=group_vix)
+
+group_oi = "OPTIONS ANALYSIS"
+i_showOI = input.bool(true, "Show OI Panel", group=group_oi)
+i_callWall = input.float(na, "Call Wall Strike (Manual)", group=group_oi)
+i_putWall = input.float(na, "Put Wall Strike (Manual)", group=group_oi)
+i_maxPain = input.float(na, "Max Pain Level (Manual)", group=group_oi)
+i_atmIV = input.float(na, "ATM IV %", group=group_oi)
+
+// ============================================================================
+// UTILITY FUNCTIONS
+// ============================================================================
+
+f_highest(len) => ta.highest(high, len)
+f_lowest(len) => ta.lowest(low, len)
+
+// ============================================================================
+// PIVOT POINT FUNCTIONS
+// ============================================================================
+
+f_standardPivot() =>
+    float h = f_highest(1)
+    float l = f_lowest(1)
+    float c = close
+    float pivot = (h + l + c) / 3.0
+    float r1 = pivot * 2.0 - l
+    float s1 = pivot * 2.0 - h
+    float r2 = pivot + (h - l)
+    float s2 = pivot - (h - l)
+    [pivot, r1, r2, s1, s2]
+
+f_camarillaPivot() =>
+    float h = f_highest(1)
+    float l = f_lowest(1)
+    float c = close
+    float range = h - l
+    float pivot = (h + l + c) / 3.0
+    float r1 = c + (range * 1.1 / 4.0)
+    float r2 = c + (range * 1.1 / 2.0)
+    float s1 = c - (range * 1.1 / 4.0)
+    float s2 = c - (range * 1.1 / 2.0)
+    [pivot, r1, r2, s1, s2]
+
+f_fibPivot() =>
+    float h = f_highest(1)
+    float l = f_lowest(1)
+    float c = close
+    float range = h - l
+    float pivot = (h + l + c) / 3.0
+    float r1 = pivot + (range * 0.382)
+    float r2 = pivot + (range * 0.618)
+    float s1 = pivot - (range * 0.382)
+    float s2 = pivot - (range * 0.618)
+    [pivot, r1, r2, s1, s2]
+
+f_getPivots() =>
+    if i_pivotType == "Standard"
+        f_standardPivot()
+    else if i_pivotType == "Fibonacci"
+        f_fibPivot()
+    else
+        f_camarillaPivot()
+
+// ============================================================================
+// ICHIMOKU CLOUD FUNCTIONS
+// ============================================================================
+
+f_getTenkan() =>
+    (ta.highest(high, i_tenkan) + ta.lowest(low, i_tenkan)) / 2.0
+
+f_getKijun() =>
+    (ta.highest(high, i_kijun) + ta.lowest(low, i_kijun)) / 2.0
+
+f_getSenkouA() =>
+    float tenkan = f_getTenkan()
+    float kijun = f_getKijun()
+    (tenkan + kijun) / 2.0
+
+f_getSenkouB() =>
+    (ta.highest(high, i_senkou) + ta.lowest(low, i_senkou)) / 2.0
+
+f_getChikou() =>
+    close[26]
+
+f_getIchimokuStatus() =>
+    float tenkan = f_getTenkan()
+    float kijun = f_getKijun()
+    float senkouA = f_getSenkouA()
+    float senkouB = f_getSenkouB()
+    float cloudTop = math.max(senkouA, senkouB)
+    float cloudBot = math.min(senkouA, senkouB)
+    
+    string status = "In Cloud"
+    int score = 0
+    
+    if close > cloudTop and tenkan > kijun
+        status := "Bull Cloud"
+        score := 3
+    else if close < cloudBot and tenkan < kijun
+        status := "Bear Cloud"
+        score := 3
+    else if tenkan > kijun
+        status := "TK Bull Cross"
+        score := 2
+    else if tenkan < kijun
+        status := "TK Bear Cross"
+        score := 2
+    else
+        status := "In Cloud"
+        score := -1
+    
+    [status, score, cloudTop, cloudBot, tenkan, kijun]
+
+// ============================================================================
+// STOCHASTIC RSI FUNCTIONS
+// ============================================================================
+
+f_getStochRSI() =>
+    float rsiVal = ta.rsi(close, i_rsiLength)
+    float k = ta.stoch(rsiVal, rsiVal, rsiVal, i_stochLen)
+    float d = ta.sma(k, i_stochSmooth)
+    [k, d]
+
+f_getStochRSIStatus() =>
+    [k, d] = f_getStochRSI()
+    
+    string status = "Neutral"
+    int score = 0
+    
+    if k < 20 and d < 20
+        status := "Oversold"
+        score := 2
+    else if k > 80 and d > 80
+        status := "Overbought"
+        score := 2
+    else if k > d and d < 50
+        status := "Bull Cross"
+        score := 1
+    else if k < d and d > 50
+        status := "Bear Cross"
+        score := 1
+    else
+        status := "Neutral"
+        score := 0
+    
+    [status, score, k, d]
+
+// ============================================================================
+// RATE OF CHANGE FUNCTIONS
+// ============================================================================
+
+f_getROC() =>
+    ta.mom(close, i_rocLen) / close[i_rocLen] * 100.0
+
+f_getROCStatus() =>
+    float rocVal = f_getROC()
+    
+    string status = "Neutral"
+    int score = 0
+    
+    if rocVal > i_rocStrong
+        status := "Strong Bullish"
+        score := 2
+    else if rocVal < -i_rocStrong
+        status := "Strong Bearish"
+        score := 2
+    else if rocVal > 0.5
+        status := "Weak Bullish"
+        score := 1
+    else if rocVal < -0.5
+        status := "Weak Bearish"
+        score := 1
+    else
+        status := "Momentum Dead"
+        score := 0
+    
+    [status, score, rocVal]
+
+// ============================================================================
+// STANDARD INDICATORS
+// ============================================================================
+
+f_getRSI() =>
+    ta.rsi(close, i_rsiLength)
+
+f_getMACD() =>
+    [macdLine, signalLine, histLine] = ta.macd(close, i_macdFast, i_macdSlow, i_macdSignal)
+    [macdLine, signalLine, histLine]
+
+f_getATR() =>
+    ta.atr(i_atrLen)
+
+f_getVolumeStatus() =>
+    float avgVol = ta.sma(volume, i_volMA)
+    
+    if volume > avgVol * 1.5
+        "Strong"
+    else if volume < avgVol * 0.7
+        "Weak"
+    else
+        "Normal"
+
+f_getVIXStatus() =>
+    float vixVal = request.security("NSE:INDIAVIX", "D", close)
+    vixVal > i_vixThreshold ? "High" : "Normal"
+
+// ============================================================================
+// COMBINED SIGNAL SCORING
+// ============================================================================
+
+f_generateSignalScore() =>
+    // Get all indicators
+    float rsiVal = f_getRSI()
+    [macdLine, signalLine, histLine] = f_getMACD()
+    [ichStatus, ichScore, cloudTop, cloudBot, tenkan, kijun] = f_getIchimokuStatus()
+    [stochStatus, stochScore, k, d] = f_getStochRSIStatus()
+    [rocStatus, rocScore, rocVal] = f_getROCStatus()
+    string volStatus = f_getVolumeStatus()
+    string vixStatus = f_getVIXStatus()
+    
+    // Calculate total score
+    int bullScore = 0
+    int bearScore = 0
+    
+    // Ichimoku scoring
+    if ichScore > 0
+        if ichStatus == "Bull Cloud" or ichStatus == "TK Bull Cross"
+            bullScore += ichScore
+        else
+            bearScore += ichScore
+    
+    // StochRSI scoring
+    if stochScore > 0
+        if stochStatus == "Oversold" or stochStatus == "Bull Cross"
+            bullScore += stochScore
+        else
+            bearScore += stochScore
+    
+    // ROC scoring
+    if rocScore > 0
+        if rocStatus == "Strong Bullish" or rocStatus == "Weak Bullish"
+            bullScore += rocScore
+        else
+            bearScore += rocScore
+    
+    // RSI scoring
+    if rsiVal < i_rsiOversold
+        bullScore += 1
+    else if rsiVal > i_rsiOverbought
+        bearScore += 1
+    
+    // MACD scoring
+    if macdLine > signalLine
+        bullScore += 1
+    else if macdLine < signalLine
+        bearScore += 1
+    
+    // Volume filter
+    int volMod = volStatus == "Strong" ? 1 : (volStatus == "Weak" ? -1 : 0)
+    
+    // VIX adjustment
+    int vixMod = vixStatus == "High" ? -1 : 0
+    
+    bullScore += volMod + vixMod
+    bearScore += volMod + vixMod
+    
+    [bullScore, bearScore, ichScore, stochScore, rocScore, rsiVal, macdLine, signalLine]
+
+// ============================================================================
+// NO-TRADE ZONE DETECTION
+// ============================================================================
+
+f_isNoTradeZone() =>
+    [bullScore, bearScore, _, _, _, _, _, _] = f_generateSignalScore()
+    string volStatus = f_getVolumeStatus()
+    
+    volStatus == "Weak" or (bullScore <= 2 and bearScore <= 2)
+
+// ============================================================================
+// MAIN SIGNAL GENERATION
+// ============================================================================
+
+[pivot, r1, r2, s1, s2] = f_getPivots()
+[bullScore, bearScore, ichScore, stochScore, rocScore, rsiVal, macdLine, signalLine] = f_generateSignalScore()
+
+bool isBuy = bullScore > bearScore and bullScore >= 3
+bool isSell = bearScore > bullScore and bearScore >= 3
+bool isNoTrade = f_isNoTradeZone()
+
+// ============================================================================
+// PLOTTING - PIVOTS
+// ============================================================================
+
+if i_showPivots
+    plot(r2, "R2", color.new(color.red, 30), linewidth=2, style=plot.style_dashed)
+    plot(r1, "R1", color.new(color.orange, 30), linewidth=2, style=plot.style_dashed)
+    plot(pivot, "Pivot", color.new(color.blue, 20), linewidth=2, style=plot.style_solid)
+    plot(s1, "S1", color.new(color.teal, 30), linewidth=2, style=plot.style_dashed)
+    plot(s2, "S2", color.new(color.green, 30), linewidth=2, style=plot.style_dashed)
+
+// ============================================================================
+// PLOTTING - ICHIMOKU CLOUD
+// ============================================================================
+
+if i_showIchimoku
+    [ichStatus, ichScore, cloudTop, cloudBot, tenkan, kijun] = f_getIchimokuStatus()
+    plot(tenkan, "Tenkan", color.new(color.blue, 40), linewidth=1)
+    plot(kijun, "Kijun", color.new(color.red, 40), linewidth=1)
+    
+    p1 = plot(cloudTop, "Cloud Top", color.new(color.green, 50), linewidth=1)
+    p2 = plot(cloudBot, "Cloud Bot", color.new(color.red, 50), linewidth=1)
+    fill(p1, p2, color=ichStatus == "Bull Cloud" ? color.new(color.green, 80) : 
+         (ichStatus == "Bear Cloud" ? color.new(color.red, 80) : color.new(color.yellow, 80)))
+
+// ============================================================================
+// PLOTTING - SIGNALS
+// ============================================================================
+
+if i_showSignals
+    if isBuy and not isNoTrade
+        plotshape(isBuy, title="Buy Signal", location=location.belowbar, shape=shape.labelup, 
+                  color=color.new(color.green, 0), textcolor=color.white, size=size.normal, text="BUY")
+    
+    if isSell and not isNoTrade
+        plotshape(isSell, title="Sell Signal", location=location.abovebar, shape=shape.labeldown, 
+                  color=color.new(color.red, 0), textcolor=color.white, size=size.normal, text="SELL")
+    
+    if isNoTrade
+        bgcolor(color.new(color.yellow, 85))
+
+// ============================================================================
+// PLOTTING - RSI SUBPLOT
+// ============================================================================
+
+plot(rsiVal, "RSI", color.new(color.blue, 0), linewidth=2, overlay=false)
+hline(i_rsiOverbought, "RSI OB", color.new(color.red, 50), linestyle=hline.style_dashed)
+hline(i_rsiOversold, "RSI OS", color.new(color.green, 50), linestyle=hline.style_dashed)
+
+// ============================================================================
+// DASHBOARD TABLE
+// ============================================================================
+
+if i_showDashboard
+    var table dashTable = table.new(position.top_right, 3, 12, 
+                                     border_color=color.new(color.gray, 50), border_width=2)
+    
+    // Header
+    table.cell(dashTable, 0, 0, "📊 NPTS v2.1", text_color=color.white, 
+               bgcolor=color.new(color.blue, 0), text_size=size.small, text_halign=text.align_center)
+    
+    // Ichimoku
+    [ichStatus, ichScore, _, _, _, _] = f_getIchimokuStatus()
+    ichColor = ichScore == 3 ? (ichStatus == "Bull Cloud" ? color.new(color.green, 0) : color.new(color.red, 0)) : color.new(color.yellow, 0)
+    ichIcon = ichStatus == "Bull Cloud" ? "☁️🟢" : (ichStatus == "Bear Cloud" ? "☁️🔴" : "☁️🟡")
+    
+    table.cell(dashTable, 0, 1, "Ichimoku", text_color=color.white, bgcolor=color.new(color.gray, 40))
+    table.cell(dashTable, 1, 1, ichIcon, text_color=color.white, bgcolor=ichColor, text_size=size.small)
+    table.cell(dashTable, 2, 1, ichStatus, text_color=color.white, bgcolor=color.new(color.gray, 40), text_size=size.small)
+    
+    // StochRSI
+    [stochStatus, stochScore, k, d] = f_getStochRSIStatus()
+    stochColor = stochScore >= 2 ? (stochStatus == "Oversold" or stochStatus == "Bull Cross" ? color.new(color.green, 0) : color.new(color.red, 0)) : color.new(color.yellow, 0)
+    stochIcon = stochStatus == "Oversold" ? "⚡📉" : (stochStatus == "Overbought" ? "⚡📈" : "⚡")
+    
+    table.cell(dashTable, 0, 2, "StochRSI", text_color=color.white, bgcolor=color.new(color.gray, 40))
+    table.cell(dashTable, 1, 2, stochIcon, text_color=color.white, bgcolor=stochColor, text_size=size.small)
+    table.cell(dashTable, 2, 2, stochStatus, text_color=color.white, bgcolor=color.new(color.gray, 40), text_size=size.small)
+    
+    // ROC
+    [rocStatus, rocScore, rocVal] = f_getROCStatus()
+    rocColor = rocScore >= 2 ? (rocVal > 0 ? color.new(color.green, 0) : color.new(color.red, 0)) : color.new(color.yellow, 0)
+    rocIcon = rocVal > i_rocStrong ? "📊🟢" : (rocVal < -i_rocStrong ? "📊🔴" : "📊🟡")
+    
+    table.cell(dashTable, 0, 3, "ROC(9)", text_color=color.white, bgcolor=color.new(color.gray, 40))
+    table.cell(dashTable, 1, 3, rocIcon, text_color=color.white, bgcolor=rocColor, text_size=size.small)
+    table.cell(dashTable, 2, 3, str.format("{0:.2f}%", rocVal), text_color=color.white, bgcolor=color.new(color.gray, 40), text_size=size.small)
+    
+    // RSI
+    rsiColor = rsiVal > i_rsiOverbought ? color.new(color.red, 0) : (rsiVal < i_rsiOversold ? color.new(color.green, 0) : color.new(color.yellow, 0))
+    table.cell(dashTable, 0, 4, "RSI(14)", text_color=color.white, bgcolor=color.new(color.gray, 40))
+    table.cell(dashTable, 1, 4, str.format("{0.0f}", rsiVal), text_color=color.white, bgcolor=rsiColor, text_size=size.small)
+    
+    // MACD
+    macdColor = macdLine > signalLine ? color.new(color.green, 0) : color.new(color.red, 0)
+    table.cell(dashTable, 0, 5, "MACD", text_color=color.white, bgcolor=color.new(color.gray, 40))
+    table.cell(dashTable, 1, 5, macdLine > signalLine ? "🟢" : "🔴", text_color=color.white, bgcolor=macdColor, text_size=size.small)
+    
+    // Volume
+    string volStatus = f_getVolumeStatus()
+    volColor = volStatus == "Strong" ? color.new(color.green, 0) : (volStatus == "Weak" ? color.new(color.red, 0) : color.new(color.yellow, 0))
+    table.cell(dashTable, 0, 6, "Volume", text_color=color.white, bgcolor=color.new(color.gray, 40))
+    table.cell(dashTable, 1, 6, volStatus, text_color=color.white, bgcolor=volColor, text_size=size.small)
+    
+    // Signal Score
+    table.cell(dashTable, 0, 7, "Bull Score", text_color=color.white, bgcolor=color.new(color.gray, 40))
+    table.cell(dashTable, 1, 7, str.format("{0.0f}", bullScore), text_color=color.white, 
+               bgcolor=color.new(color.green, 40), text_size=size.small, text_halign=text.align_center)
+    
+    table.cell(dashTable, 0, 8, "Bear Score", text_color=color.white, bgcolor=color.new(color.gray, 40))
+    table.cell(dashTable, 1, 8, str.format("{0.0f}", bearScore), text_color=color.white, 
+               bgcolor=color.new(color.red, 40), text_size=size.small, text_halign=text.align_center)
+    
+    // Trade Status
+    table.cell(dashTable, 0, 9, "Status", text_color=color.white, bgcolor=color.new(color.gray, 40))
+    string tradeStatus = isBuy ? "🟢 BUY" : (isSell ? "🔴 SELL" : (isNoTrade ? "🟡 NO TRADE" : "⚪ WAIT"))
+    statusColor = isBuy ? color.new(color.green, 0) : (isSell ? color.new(color.red, 0) : color.new(color.yellow, 40))
+    table.cell(dashTable, 1, 9, tradeStatus, text_color=color.white, bgcolor=statusColor, text_size=size.small, text_halign=text.align_center)
+    
+    // Pivot Info
+    table.cell(dashTable, 0, 10, "Pivot Type", text_color=color.white, bgcolor=color.new(color.gray, 40))
+    table.cell(dashTable, 1, 10, i_pivotType, text_color=color.white, bgcolor=color.new(color.gray, 40), text_size=size.small)
+    
+    // Symbol
+    table.cell(dashTable, 0, 11, "Symbol", text_color=color.white, bgcolor=color.new(color.gray, 40))
+    table.cell(dashTable, 1, 11, i_symbol, text_color=color.white, bgcolor=color.new(color.gray, 40), text_size=size.small)
+
+// ============================================================================
+// OPTIONS ANALYSIS PANEL (MANUAL INPUT FOR NOW)
+// ============================================================================
+
+if i_showOI
+    var table oiTable = table.new(position.bottom_right, 2, 6,
+                                   border_color=color.new(color.purple, 50), border_width=2)
+    
+    table.cell(oiTable, 0, 0, "📊 OI Analysis", text_color=color.white, 
+               bgcolor=color.new(color.purple, 0), text_size=size.small, text_halign=text.align_center)
+    
+    // Call Wall
+    if not na(i_callWall)
+        table.cell(oiTable, 0, 1, "🏰 Call Wall", text_color=color.white, bgcolor=color.new(color.orange, 40))
+        table.cell(oiTable, 1, 1, str.format("₹ {0}", i_callWall), text_color=color.white, bgcolor=color.new(color.orange, 40), text_size=size.small)
+    
+    // Put Wall
+    if not na(i_putWall)
+        table.cell(oiTable, 0, 2, "🛡️ Put Wall", text_color=color.white, bgcolor=color.new(color.teal, 40))
+        table.cell(oiTable, 1, 2, str.format("₹ {0}", i_putWall), text_color=color.white, bgcolor=color.new(color.teal, 40), text_size=size.small)
+    
+    // Max Pain
+    if not na(i_maxPain)
+        table.cell(oiTable, 0, 3, "🎯 Max Pain", text_color=color.white, bgcolor=color.new(color.blue, 40))
+        table.cell(oiTable, 1, 3, str.format("₹ {0}", i_maxPain), text_color=color.white, bgcolor=color.new(color.blue, 40), text_size=size.small)
+    
+    // ATM IV
+    if not na(i_atmIV)
+        ivColor = i_atmIV > 25 ? color.new(color.red, 40) : (i_atmIV > 15 ? color.new(color.yellow, 40) : color.new(color.green, 40))
+        table.cell(oiTable, 0, 4, "📈 ATM IV", text_color=color.white, bgcolor=color.new(color.gray, 40))
+        table.cell(oiTable, 1, 4, str.format("{0:.1f}%", i_atmIV), text_color=color.white, bgcolor=ivColor, text_size=size.small)
+    
+    // OI Signal
+    oi_signal = not na(i_callWall) and not na(i_putWall) ? 
+                (i_callWall > i_putWall ? "🟢 BULL" : "🔴 BEAR") : "⚪ PENDING"
+    oi_sig_color = i_callWall > i_putWall ? color.new(color.green, 40) : color.new(color.red, 40)
+    table.cell(oiTable, 0, 5, "OI Signal", text_color=color.white, bgcolor=color.new(color.gray, 40))
+    table.cell(oiTable, 1, 5, oi_signal, text_color=color.white, bgcolor=oi_sig_color, text_size=size.small, text_halign=text.align_center)
+
+// ============================================================================
+// ALERTS
+// ============================================================================
+
+alertmessage = ""
+
+if isBuy and not isNoTrade
+    alertmessage := "🟢 BUY SIGNAL | Ichimoku: " + ichStatus + " | StochRSI: " + stochStatus + " | ROC: Strong"
+    alert(alertmessage, alert.freq_once_per_bar_close)
+
+if isSell and not isNoTrade
+    alertmessage := "🔴 SELL SIGNAL | Ichimoku: " + ichStatus + " | StochRSI: " + stochStatus + " | ROC: Strong"
+    alert(alertmessage, alert.freq_once_per_bar_close)
+
+// ============================================================================
+// END OF INDICATOR
+// ============================================================================

@@ -188,6 +188,9 @@ function buildSymbolCandidates(raw: string): string[] {
     "MIDCAP":     ["^NSEMDCP50"],
     "GIFTNIFTY":  ["^NSEI"], // GIFT NIFTY tracks NIFTY 50
     "GIFT NIFTY": ["^NSEI"],
+    "BTC":        ["BTC-USD"],
+    "BITCOIN":    ["BTC-USD"],
+    "GOLD":       ["GC=F"],
   };
   if (indexAliases[s]) return indexAliases[s];
   // Already has a suffix or is an index like ^NSEI — use as-is

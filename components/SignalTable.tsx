@@ -14,6 +14,22 @@ type Signal = {
   strength: number;
   confidence?: number;
   reason: string;
+  indicators?: {
+    dailyTrend?: string;
+    weeklyTrend?: string;
+    longTermTrend?: string;
+    trendConsensus?: string;
+    superTrend?: string | boolean;
+    adx?: number;
+    momentum?: {
+      roc5?: number;
+      roc10?: number;
+      roc20?: number;
+      direction?: string;
+      pulse?: string;
+      strength?: number;
+    };
+  };
   fnoRecommendation?: { type: string; strike?: number | null; reason?: string } | null;
   strongSupport?: Array<{level: number; confidence: number; touches: number; age: number}>;
   strongResistance?: Array<{level: number; confidence: number; touches: number; age: number}>;
@@ -33,7 +49,17 @@ function SignalPill({ signal }: { signal: Signal["signal"] }) {
     EXIT: "bg-rose-600 text-white",
     HOLD: "bg-sky-500 text-white",
   };
-  return <span className={`px-2 py-1 text-xs rounded-md font-semibold ${map[signal] ?? 'bg-gray-500 text-white'}`}>{signal}</span>;
+  const normalized = String(signal ?? "").toUpperCase();
+  return <span className={`px-2 py-1 text-xs rounded-md font-semibold ${map[normalized] ?? 'bg-gray-500 text-white'}`}>{normalized || 'HOLD'}</span>;
+}
+
+function normalizeSignal(signal: string | undefined) {
+  const norm = String(signal ?? "").toUpperCase();
+  if (norm.includes("BUY")) return "BUY";
+  if (norm.includes("SELL")) return "SELL";
+  if (norm === "EXIT") return "EXIT";
+  if (norm === "HOLD") return "HOLD";
+  return norm || "HOLD";
 }
 
 function StrikeChildTable({ strikesData, parentSignal }: { strikesData: StrikesData; parentSignal: Signal }) {
@@ -43,9 +69,10 @@ function StrikeChildTable({ strikesData, parentSignal }: { strikesData: StrikesD
   const tick = strikes?.tick ?? 50;
   const underlyingPrice = strikes?.price ?? parentSignal.currentPrice ?? parentSignal.entryPrice ?? 0;
   const rec = recommendation;
-  const isBull = parentSignal.signal === 'BUY';
-  const isBear = parentSignal.signal === 'SELL';
-  const isExit = parentSignal.signal === 'EXIT';
+  const exactSignal = normalizeSignal(parentSignal.signal);
+  const isBull = exactSignal === 'BUY';
+  const isBear = exactSignal === 'SELL';
+  const isExit = exactSignal === 'EXIT';
 
   // Compute buy/sell/exit prices for each strike based on ATR-derived levels
   const entryP = Number(parentSignal.entryPrice ?? 0);
@@ -71,6 +98,43 @@ function StrikeChildTable({ strikesData, parentSignal }: { strikesData: StrikesD
           <div className="font-bold text-lg">₹{(Number(underlyingPrice) || 0).toFixed(2)}</div>
         </div>
       </div>
+
+      {(parentSignal.indicators?.dailyTrend || parentSignal.indicators?.weeklyTrend || parentSignal.indicators?.longTermTrend || parentSignal.indicators?.momentum) && (
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-3 text-[11px] text-white/70 border border-white/10 rounded-lg p-3 bg-[#07101f]">
+          <div>
+            <div className="text-[9px] uppercase text-[var(--bf-muted)]">Signal</div>
+            <div className="font-semibold text-white">{exactSignal}</div>
+          </div>
+          <div>
+            <div className="text-[9px] uppercase text-[var(--bf-muted)]">Daily trend</div>
+            <div className="font-semibold text-white">{parentSignal.indicators?.dailyTrend ?? '—'}</div>
+          </div>
+          <div>
+            <div className="text-[9px] uppercase text-[var(--bf-muted)]">Weekly trend</div>
+            <div className="font-semibold text-white">{parentSignal.indicators?.weeklyTrend ?? '—'}</div>
+          </div>
+          <div>
+            <div className="text-[9px] uppercase text-[var(--bf-muted)]">Long-term trend</div>
+            <div className="font-semibold text-white">{parentSignal.indicators?.longTermTrend ?? '—'}</div>
+          </div>
+          <div>
+            <div className="text-[9px] uppercase text-[var(--bf-muted)]">Consensus</div>
+            <div className="font-semibold text-white">{(parentSignal.indicators?.trendConsensus ?? 'MIXED').replace('_', ' ')}</div>
+          </div>
+          <div>
+            <div className="text-[9px] uppercase text-[var(--bf-muted)]">Momentum</div>
+            <div className="font-semibold text-white">{parentSignal.indicators?.momentum?.pulse ?? '—'}</div>
+          </div>
+          <div>
+            <div className="text-[9px] uppercase text-[var(--bf-muted)]">Momentum dir</div>
+            <div className="font-semibold text-white">{parentSignal.indicators?.momentum?.direction ?? '—'}</div>
+          </div>
+          <div>
+            <div className="text-[9px] uppercase text-[var(--bf-muted)]">ADX</div>
+            <div className="font-semibold text-white">{parentSignal.indicators?.adx ?? '—'}</div>
+          </div>
+        </div>
+      )}
 
       {/* Strikes table with Buy/Sell/Exit prices */}
       {strikesList.length > 0 && (
@@ -185,6 +249,50 @@ function StrikeChildTable({ strikesData, parentSignal }: { strikesData: StrikesD
         </div>
       </div>
 
+      {/* Trend summary */}
+      {(parentSignal.indicators?.dailyTrend || parentSignal.indicators?.weeklyTrend || parentSignal.indicators?.longTermTrend) && (
+        <div className="grid grid-cols-2 gap-2 text-[11px] text-white/70 border-t border-white/5 pt-3">
+          <div>
+            <div className="text-[10px] text-[var(--bf-muted)] uppercase">Daily Trend</div>
+            <div className="font-semibold text-white">{parentSignal.indicators.dailyTrend}</div>
+          </div>
+          <div>
+            <div className="text-[10px] text-[var(--bf-muted)] uppercase">Weekly Trend</div>
+            <div className="font-semibold text-white">{parentSignal.indicators.weeklyTrend}</div>
+          </div>
+          <div>
+            <div className="text-[10px] text-[var(--bf-muted)] uppercase">Long-term Trend</div>
+            <div className="font-semibold text-white">{parentSignal.indicators.longTermTrend}</div>
+          </div>
+          <div>
+            <div className="text-[10px] text-[var(--bf-muted)] uppercase">Consensus</div>
+            <div className={`font-semibold ${parentSignal.indicators.trendConsensus === 'ALL_BULL' ? 'text-emerald-300' : parentSignal.indicators.trendConsensus === 'ALL_BEAR' ? 'text-rose-300' : 'text-sky-300'}`}>
+              {(parentSignal.indicators.trendConsensus ?? 'MIXED').replace('_', ' ')}
+            </div>
+          </div>
+          <div>
+            <div className="text-[10px] text-[var(--bf-muted)] uppercase">SuperTrend</div>
+            <div className="font-semibold text-white capitalize">{String(parentSignal.indicators.superTrend)}</div>
+          </div>
+          <div>
+            <div className="text-[10px] text-[var(--bf-muted)] uppercase">ADX</div>
+            <div className="font-semibold text-white">{parentSignal.indicators.adx}</div>
+          </div>
+          <div>
+            <div className="text-[10px] text-[var(--bf-muted)] uppercase">Movementum</div>
+            <div className={`font-semibold ${parentSignal.indicators.momentum?.pulse === 'ACCELERATING' ? 'text-emerald-300' : parentSignal.indicators.momentum?.pulse === 'DECELERATING' ? 'text-rose-300' : 'text-sky-300'}`}>
+              {parentSignal.indicators.momentum?.pulse ?? 'MIXED'}
+            </div>
+          </div>
+          <div>
+            <div className="text-[10px] text-[var(--bf-muted)] uppercase">ROC 5/10/20</div>
+            <div className="font-semibold text-white">
+              {parentSignal.indicators.momentum?.roc5 ?? '—'} / {parentSignal.indicators.momentum?.roc10 ?? '—'} / {parentSignal.indicators.momentum?.roc20 ?? '—'}
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Reason */}
       <div className="text-xs text-[var(--bf-muted)] border-t border-white/5 pt-2">
         <span className="font-semibold">Reason:</span> {parentSignal.reason}
@@ -290,7 +398,7 @@ export default function SignalTable({ data, loading, onSelect }: { data: Signal[
                       <div className="text-xs text-[var(--bf-muted)]">{row.name}</div>
                     </td>
                     <td className="px-4 py-3 text-right font-semibold">{row.currentPrice != null ? Number(row.currentPrice).toFixed(2) : '—'}</td>
-                    <td className="px-4 py-3 text-center"><SignalPill signal={row.signal} /></td>
+                    <td className="px-4 py-3 text-center"><SignalPill signal={normalizeSignal(row.signal)} /></td>
                     <td className="px-4 py-3 text-right font-medium text-emerald-400">{row.entryPrice != null ? Number(row.entryPrice).toFixed(2) : '—'}</td>
                     <td className="px-4 py-3 text-right font-medium text-rose-400">{row.stopLoss != null ? Number(row.stopLoss).toFixed(2) : '—'}</td>
                     <td className="px-4 py-3 text-right font-medium text-sky-400">{row.targetPrice != null ? Number(row.targetPrice).toFixed(2) : '—'}</td>
@@ -368,7 +476,7 @@ export default function SignalTable({ data, loading, onSelect }: { data: Signal[
                   </div>
                   <div className="text-right">
                     <div className="font-semibold">{row.currentPrice != null ? Number(row.currentPrice).toFixed(2) : '0.00'}</div>
-                    <div className="mt-2 text-right"><SignalPill signal={row.signal} /></div>
+                    <div className="mt-2 text-right"><SignalPill signal={normalizeSignal(row.signal)} /></div>
                     <div className="text-xs text-[var(--bf-muted)] mt-2">Str: {row.strength}%</div>
                   </div>
                 </div>

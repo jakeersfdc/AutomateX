@@ -10,6 +10,7 @@
 
 import { getHistorical, fetchQuote, suggestOptionStrikes } from '../stockUtils';
 import { readOI } from './oiAnalysis';
+import { isBreakAbove, isBreakBelow } from './sr-break.js';
 
 // ── Indicator helpers ─────────────────────────────────────────────────────────
 
@@ -206,6 +207,16 @@ function rsi(closes: number[], period = 14): (number | null)[] {
       const avgLoss = lossSum / period;
       result.push(avgLoss === 0 ? 100 : 100 - 100 / (1 + avgGain / avgLoss));
     }
+  }
+  return result;
+}
+
+function roc(closes: number[], period: number): (number | null)[] {
+  const result: (number | null)[] = [];
+  for (let i = 0; i < closes.length; i++) {
+    if (i < period) { result.push(null); continue; }
+    const prev = closes[i - period];
+    result.push(prev === 0 ? null : (closes[i] - prev) / prev);
   }
   return result;
 }
@@ -766,6 +777,20 @@ export async function generateSignal(symbol: string): Promise<Signal> {
   const obvArr = obv(closes, volumes);
   const obvSlope = obvArr[n - 1] - obvArr[Math.max(0, n - 6)];
 
+  const roc5Arr = roc(closes, 5);
+  const roc10Arr = roc(closes, 10);
+  const roc20Arr = roc(closes, 20);
+  const roc5 = roc5Arr[n - 1] ?? 0;
+  const roc10 = roc10Arr[n - 1] ?? 0;
+  const roc20 = roc20Arr[n - 1] ?? 0;
+  const momentumDirection = roc5 > 0 ? 'BULL' : roc5 < 0 ? 'BEAR' : 'NEUTRAL';
+  const momentumPulse = roc5 > 0.02 && roc10 > 0.015
+    ? 'ACCELERATING'
+    : roc5 < -0.02 && roc10 < -0.015
+    ? 'DECELERATING'
+    : 'MIXED';
+  const momentumStrength = Math.round(Math.min(100, Math.abs(roc5) * 200 + Math.abs(roc10) * 100 + Math.abs(roc20) * 50));
+
   // ── Support & Resistance levels ───────────────────────────────────────────
   const sr = findSupportResistance(lastClose, highs, lows, closes);
   const { pivots, fibs, resistanceLevels, supportLevels } = sr;
@@ -809,6 +834,15 @@ export async function generateSignal(symbol: string): Promise<Signal> {
     && wkEma10Last > wkEma30Last && wkEma10Slope >= 0 && lastClose > wkEma30Last;
   const weeklyBear = Number.isFinite(wkEma10Last) && Number.isFinite(wkEma30Last)
     && wkEma10Last < wkEma30Last && wkEma10Slope <= 0 && lastClose < wkEma30Last;
+
+  const dailyTrend = emaBull ? 'BULL' : emaBear ? 'BEAR' : 'NEUTRAL';
+  const weeklyTrend = weeklyBull ? 'BULL' : weeklyBear ? 'BEAR' : 'NEUTRAL';
+  const longTermTrend = longTermBull ? 'BULL' : longTermBear ? 'BEAR' : 'NEUTRAL';
+  const trendConsensus = [dailyTrend, weeklyTrend, longTermTrend].every(t => t === 'BULL')
+    ? 'ALL_BULL'
+    : [dailyTrend, weeklyTrend, longTermTrend].every(t => t === 'BEAR')
+    ? 'ALL_BEAR'
+    : 'MIXED';
 
   // ── Primary bias — single biggest decision a 30-year trader makes ─────────
   //    LONG_ONLY: weekly bull → only BUY setups allowed (SELL needs reversal proof)
@@ -880,6 +914,24 @@ export async function generateSignal(symbol: string): Promise<Signal> {
   if (macdHist < 0 && macdHistPrev >= 0) { bearScore += 2; reasons.push('MACD bearish cross'); }
   else if (macdHist < 0) { bearScore += 1; reasons.push('MACD negative'); }
 
+  // 2.5 Momentum / movementum — ROC-based velocity and acceleration
+  if (roc5 > 0.02 && roc10 > 0.015) {
+    bullScore += 1;
+    reasons.push(`Momentum accelerating (+${(roc5 * 100).toFixed(1)}% 5d ROC)`);
+  }
+  if (roc5 < -0.02 && roc10 < -0.015) {
+    bearScore += 1;
+    reasons.push(`Momentum decelerating (-${(Math.abs(roc5) * 100).toFixed(1)}% 5d ROC)`);
+  }
+  if (roc20 > 0.03) {
+    bullScore += 1;
+    reasons.push(`Longer-term momentum positive (${(roc20 * 100).toFixed(1)}% 20d ROC)`);
+  }
+  if (roc20 < -0.03) {
+    bearScore += 1;
+    reasons.push(`Longer-term momentum negative (${(Math.abs(roc20) * 100).toFixed(1)}% 20d ROC)`);
+  }
+
   // 3. Bollinger Bands — lower-band touch is only bullish if trend isn't breaking down
   if (bbLower && lastClose <= bbLower) {
     if (strongDowntrend || isSharpDownDay) {
@@ -945,47 +997,49 @@ export async function generateSignal(symbol: string): Promise<Signal> {
   }
 
   // 10. Support & Resistance proximity scoring
-  //     Only treat support as bullish if it's holding (not in an active breakdown).
+  //     Add explicit breakout / failure signals for nearest swing levels.
   if (nearestSupport) {
     const distToSupport = (lastClose - nearestSupport) / lastClose;
-    const breakingSupport = strongDowntrend || isSharpDownDay;
-    if (distToSupport >= 0 && distToSupport < 0.01) {
+    const supportBreak = isBreakBelow(lastClose, prevClose, nearestSupport);
+    const supportHold = distToSupport >= 0 && distToSupport < 0.01;
+    const breakingSupport = supportBreak || strongDowntrend || isSharpDownDay;
+
+    if (supportBreak) {
+      bearScore += 3;
+      reasons.push(`Broke support ₹${round(nearestSupport)} — bearish continuation`);
+    } else if (supportHold) {
       if (breakingSupport) {
         bearScore += 2;
         reasons.push(`Testing support ₹${round(nearestSupport)} in weak market — breakdown risk`);
       } else {
         bullScore += 2;
-        reasons.push(`At support ₹${round(nearestSupport)}`);
+        reasons.push(`Holding support ₹${round(nearestSupport)}`);
       }
     } else if (distToSupport >= 0 && distToSupport < 0.02) {
-      if (breakingSupport) {
-        bearScore += 1;
-        reasons.push(`Near support ₹${round(nearestSupport)} under pressure`);
-      } else {
-        bullScore += 1;
-        reasons.push(`Near support ₹${round(nearestSupport)}`);
-      }
+      bullScore += 1;
+      reasons.push(`Near support ₹${round(nearestSupport)}`);
     }
   }
   if (nearestResistance) {
     const distToResistance = (nearestResistance - lastClose) / lastClose;
-    const breakingResistance = strongUptrend || isSharpUpDay;
-    if (distToResistance >= 0 && distToResistance < 0.01) {
+    const resistanceBreak = isBreakAbove(lastClose, prevClose, nearestResistance);
+    const resistanceHold = distToResistance >= 0 && distToResistance < 0.01;
+    const breakingResistance = resistanceBreak || strongUptrend || isSharpUpDay;
+
+    if (resistanceBreak) {
+      bullScore += 3;
+      reasons.push(`Broke resistance ₹${round(nearestResistance)} — bullish continuation`);
+    } else if (resistanceHold) {
       if (breakingResistance) {
         bullScore += 2;
-        reasons.push(`Breaking resistance ₹${round(nearestResistance)}`);
+        reasons.push(`Pushing through resistance ₹${round(nearestResistance)}`);
       } else {
         bearScore += 2;
-        reasons.push(`At resistance ₹${round(nearestResistance)}`);
+        reasons.push(`Holding resistance ₹${round(nearestResistance)}`);
       }
     } else if (distToResistance >= 0 && distToResistance < 0.02) {
-      if (breakingResistance) {
-        bullScore += 1;
-        reasons.push(`Approaching resistance ₹${round(nearestResistance)} with momentum`);
-      } else {
-        bearScore += 1;
-        reasons.push(`Near resistance ₹${round(nearestResistance)}`);
-      }
+      bearScore += 1;
+      reasons.push(`Near resistance ₹${round(nearestResistance)}`);
     }
   }
 
@@ -1347,6 +1401,15 @@ export async function generateSignal(symbol: string): Promise<Signal> {
       bbUpper: round(bbUpper), bbMid: round(bbMid), bbLower: round(bbLower),
       ema9: round(ema9[n - 1]), ema21: round(ema21[n - 1]), ema50: round(ema50[n - 1]), ema200: round(ema200[n - 1]),
       superTrend: stTrend, adx: round(adxVal), atr: round(atrVal), vwap: round(vwapVal),
+      dailyTrend, weeklyTrend, longTermTrend, trendConsensus,
+      momentum: {
+        roc5: Number((roc5 * 100).toFixed(1)),
+        roc10: Number((roc10 * 100).toFixed(1)),
+        roc20: Number((roc20 * 100).toFixed(1)),
+        direction: momentumDirection,
+        pulse: momentumPulse,
+        strength: momentumStrength,
+      },
       obvSlope: Math.round(obvSlope), volumeRatio: round(volRatio),
       bullScore, bearScore, netScore,
       pivot: round(pivots.pp), r1: round(pivots.r1), r2: round(pivots.r2), r3: round(pivots.r3),
@@ -1395,6 +1458,8 @@ const FNO_SYMBOLS = [
   'EICHERMOT.NS', 'BAJAJFINSV.NS', 'NESTLEIND.NS', 'BRITANNIA.NS', 'DIVISLAB.NS',
   // Index F&O
   '^NSEI', '^NSEBANK',
+  // Global / alternative markets
+  'BTC-USD', 'GC=F',
 ];
 
 export async function scanMarket(symbols?: string[]): Promise<Signal[]> {

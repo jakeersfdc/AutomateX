@@ -57,6 +57,16 @@ class TestFeatureEngineering:
         labels = build_labels(feats, horizon=1, threshold=0.005)
         assert set(labels.dropna().unique()).issubset({0, 1})
 
+    def test_labels_multi_horizon(self):
+        from ml.train import compute_features, build_labels
+        df = self._make_ohlcv(200)
+        feats = compute_features(df)
+        labels_1 = build_labels(feats, horizon=1, threshold=0.002)
+        labels_5 = build_labels(feats, horizon=5, threshold=0.002)
+        assert len(labels_1) == len(labels_5)
+        assert set(labels_1.dropna().unique()).issubset({0, 1})
+        assert set(labels_5.dropna().unique()).issubset({0, 1})
+
     def test_predict_v1_features(self):
         from ml.predict import compute_features_v1, FEATURE_COLS_V1
         df = self._make_ohlcv(100)

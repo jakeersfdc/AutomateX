@@ -131,8 +131,5 @@ export async function POST(req: Request) {
   }
 }
 
-export const config = {
-  api: {
-    bodyParser: false,
-  },
-};
+// Route segment config for disabling body parser (handles raw request body)
+export const dynamic = 'force-dynamic';

@@ -1,0 +1,649 @@
+//@version=6
+
+// NIFTY Institutional Trading System
+// Author: Institutional Trading Specialist
+// Description: Complete institutional trading system for NIFTY and BANKNIFTY indices
+// Designed for professional traders with risk management, multi-timeframe analysis, and volume-based signals
+
+indicator(
+    title="NIFTY Institutional Trading System",
+    shorttitle="NITS",
+    overlay=true=========================================================
+// CONSTANTS
+// ============================================================================
+
+// India Market timings (IST timezone)
+var int MARKET_OPEN = 09*60 + 15  // 9:15 AM
+var int OR_START = 09*60 + 08      // 9:08 AM
+var int OR_END = 09*60 + 15        // 9:15 AM
+var int MARKET_CLOSE = 15*60 + 30  // 3:30 PM
+
+// ============================================================================
+// INPUT SETTINGS
+// ============================================================================
+
+group_general = "GENERAL SETTINGS"
+i_showDashboard = input.bool(true, "Show Dashboard", group=group_general)
+i_showOR = input.bool(true, "Show Opening Range", group=group_general)
+i_showDailyLevels = input.bool(true, "Show Daily Levels", group=group_general)
+i_showWeeklyLevels = input.bool(true, "Show Weekly Levels", group=group_general)
+i_showPOC = input.bool(true, "Show POC Levels", group=group_general)
+i_showSignals = input.bool(true, "Show Signals", group=group_general)
+i_showTargets = input.bool(true, "Show Targets", group=group_general)
+
+group_or = "OPENING RANGE SETTINGS"
+i_orLookback = input.int(7, "OR Lookback Days", minval=1, maxval=30, group=group_or)
+
+group_poc = "POC SETTINGS"
+i_pocBandPercent = input.float(1.0, "POC Band %", minval=0.1, maxval=5.0, group=group_poc)
+
+group_vix = "VIX SETTINGS"
+i_vixLow = input.float(15.0, "VIX Low Threshold", minval=5.0, maxval=20.0, group=group_vix)
+i_vixHigh = input.float(25.0, "VIX High Threshold", minval=20.0, maxval=40.0, group=group_vix)
+
+group_volume = "VOLUME SETTINGS"
+i_volPeriod = input.int(20, "Volume MA Period", minval=5, maxval=50, group=group_volume)
+i_volStrong = input.float(1.3, "Strong Volume Multiplier", minval=1.0, maxval=3.0, group=group_volume)
+i_volWeak = input.float(0.7, "Weak Volume Multiplier", minval=0.3, maxval=1.0, group=group_volume)
+
+group_doji = "DOJI SETTINGS"
+i_dojiWickRatio = input.float(2.5, "Doji Wick Ratio", minval=1.5, maxval=5.0, group=group_doji)
+
+group_block = "BLOCK CANDLE SETTINGS"
+i_blockBodyPercent = input.float(75.0, "Block Body % of Range", minval=50.0, maxval=95.0, group=group_block)
+
+group_sweep = "LIQUIDITY SWEEP SETTINGS"
+i_sweepLookback = input.int(5, "Sweep Lookback Bars", minval=2, maxval=20, group=group_sweep)
+
+group_alerts = "ALERT SETTINGS"
+i_enableAlerts = input.bool(true, "Enable Alerts", group=group_alerts)
+
+// ============================================================================
+// TIMEFRAME DATA STRUCTURES
+// ============================================================================
+
+// Daily data
+var float dailyHigh = na
+var float dailyLow = na
+var float dailyClose = na
+var float dailyOpen = na
+
+// Weekly data
+var float weeklyHigh = na
+var float weeklyLow = na
+var float weeklyClose = na
+var float weeklyOpen = na
+
+// Opening Range
+var float orHigh = na
+var float orLow = na
+var bool orComplete = false
+var bool orTouched = false
+
+// ============================================================================
+// UTILITY FUNCTIONS
+// ============================================================================
+
+// Get India Standard Time (IST) from UTC
+f_getISTTime() =>
+    int(datetime.hour(time) * 60 + datetime.minute(time)) + 5*60 + 30
+
+// Get day of week (0 = Sunday, 1 = Monday, etc.)
+f_getDayOfWeek() =>
+    int(dayofweek(time))
+
+// ============================================================================
+// OPENING RANGE FUNCTIONS
+// ============================================================================
+
+// Capture opening range (9:08 AM - 9:15 AM IST)
+f_captureOpeningRange() =>
+    int timeIST = f_getISTTime()
+    
+    if timeIST >= OR_START and timeIST < OR_END and not orComplete
+        if na(orHigh)
+            orHigh := high
+            orLow := low
+        else
+            orHigh := math.max(orHigh, high)
+            orLow := math.min(orLow, low)
+        
+        if timeIST >= OR_END - 1
+            orComplete := true
+            orTouched := true
+    
+    if timeIST < OR_START
+        orHigh := na
+        orLow := na
+        orComplete := false
+
+// Check for ORB (Opening Range Breakout) conditions
+f_getORBStatus() =>
+    string status = "None"
+    
+    if not na(orHigh) and not na(orLow)
+        if close > orHigh
+            status := "Breakout Up"
+        else if close < orLow
+            status := "Breakout Down"
+        else if close >= orLow and close <= orHigh
+            status := "Inside"
+    
+    status
+
+// ============================================================================
+// DAILY LEVEL FUNCTIONS
+// ============================================================================
+
+// Update daily levels (previous day)
+f_updateDailyLevels() =>
+    if dayofweek(time) != dayofweek(time[1]) or na(dailyClose)
+        dailyHigh := high[1]
+        dailyLow := low[1]
+        dailyClose := close[1]
+        dailyOpen := open[1]
+
+// ============================================================================
+// WEEKLY LEVEL FUNCTIONS
+// ============================================================================
+
+// Update weekly levels (previous week)
+f_updateWeeklyLevels() =>
+    if f_getDayOfWeek() == 1 or na(weeklyClose)
+        weeklyHigh := high[5]
+        weeklyLow := low[5]
+        weeklyClose := close[5]
+        weeklyOpen := open[5]
+
+// ============================================================================
+// POC APPROXIMATION FUNCTIONS
+// ============================================================================
+
+// Calculate approximate POC (Point of Control) = (H+L+C)/3
+f_calculatePOC(float h, float l, float c) =>
+    (h + l + c) / 3
+
+// Calculate VAH using percentage bands
+f_calculateVAH(float poc, float priceRange) =>
+    poc + (priceRange * i_pocBandPercent / 100)
+
+// Calculate VAL using percentage bands
+f_calculateVAL(float poc, float priceRange) =>
+    poc - (priceRange * i_pocBandPercent / 100)
+
+// Get daily POC and value areas
+f_getDailyPOC() =>
+    if na(dailyHigh) or na(dailyLow) or na(dailyClose)
+        [na, na, na]
+    else
+        float poc = f_calculatePOC(dailyHigh, dailyLow, dailyClose)
+        float priceRange = dailyHigh - dailyLow
+        float vah = f_calculateVAH(poc, priceRange)
+        float val = f_calculateVAL(poc, priceRange)
+        [poc, vah, val]
+
+// Get weekly POC and value areas
+f_getWeeklyPOC() =>
+    if na(weeklyHigh) or na(weeklyLow) or na(weeklyClose)
+        [na, na, na]
+    else
+        float poc = f_calculatePOC(weeklyHigh, weeklyLow, weeklyClose)
+        float priceRange = weeklyHigh - weeklyLow
+        float vah = f_calculateVAH(poc, priceRange)
+        float val = f_calculateVAL(poc, priceRange)
+        [poc, vah, val]
+
+// ============================================================================
+// PROFILE DETECTION FUNCTIONS
+// ============================================================================
+
+// Detect profile type: P (Bullish), b (Bearish), D (Balanced), I (Initial Range)
+f_getProfileType() =>
+    string profileType = "N"
+    
+    float atr = ta.atr(14)
+    float candleHigh = high
+    float candleLow = low
+    float candleRange = candleHigh - candleLow
+    float prevClose = close[1]
+    float trend = close - prevClose
+    
+    if trend > 0 and candleRange > atr and close > open
+        profileType := "P"
+    else if trend < 0 and candleRange > atr and close < open
+        profileType := "b"
+    else if candleRange < atr * 0.8
+        profileType := "D"
+    else if candleRange > atr * 1.2
+        profileType := "I"
+    else
+        profileType := "N"
+    
+    profileType
+
+// ============================================================================
+// VIX FILTER FUNCTIONS
+// ============================================================================
+
+// Get VIX status based on NSE:INDIAVIX
+f_getVIXStatus() =>
+    string vixStatus = "Neutral"
+    
+    float vixValue = request.security("NSE:INDIAVIX", "D", close)
+    
+    if vixValue < i_vixLow
+        vixStatus := "Low"
+    else if vixValue > i_vixHigh
+        vixStatus := "High"
+    else
+        vixStatus := "Neutral"
+    
+    vixStatus
+
+// ============================================================================
+// LIQUIDITY SWEEP FUNCTIONS
+// ============================================================================
+
+// Detect BSL (Below Support Line) sweep
+f_detectBSLSweep() =>
+    bool bslSweep = false
+    
+    float prevSwingHigh = high[i_sweepLookback]
+    
+    if high > prevSwingHigh and close < high
+        bslSweep := true
+    
+    bslSweep
+
+// Detect SSL (Stop Support Line) sweep
+f_detectSSLSweep() =>
+    bool sslSweep = false
+    
+    float prevSwingLow = low[i_sweepLookback]
+    
+    if low < prevSwingLow and close > low
+        sslSweep := true
+    
+    sslSweep
+
+// Get liquidity status
+f_getLiquidityStatus() =>
+    string status = "None"
+    
+    if f_detectSSLSweep()
+        status := "SSL Swept"
+    else if f_detectBSLSweep()
+        status := "BSL Swept"
+    else
+        status := "None"
+    
+    status
+
+// ============================================================================
+// VOLUME ANALYSIS FUNCTIONS
+// ============================================================================
+
+// Calculate average volume
+f_getAverageVolume() =>
+    ta.sma(volume, i_volPeriod)
+
+// Classify volume status
+f_getVolumeStatus() =>
+    string volStatus = "Normal"
+    
+    float avgVol = f_getAverageVolume()
+    float currentVol = volume
+    
+    if currentVol > avgVol * i_volStrong
+        volStatus := "Strong"
+    else if currentVol < avgVol * i_volWeak
+        volStatus := "Weak"
+    else
+        volStatus := "Normal"
+    
+    volStatus
+
+// ============================================================================
+// DOJI DETECTION FUNCTIONS
+// ============================================================================
+
+// Detect Doji candle
+f_isDoji() =>
+    bool isDoji = false
+    
+    float bodySize = math.abs(close - open)
+    float wickSize = high - low
+    
+    if bodySize < (wickSize / i_dojiWickRatio)
+        isDoji := true
+    
+    isDoji
+
+// ============================================================================
+// BLOCK CANDLE DETECTION FUNCTIONS
+// ============================================================================
+
+// Detect bull block candle
+f_isBullBlockCandle() =>
+    bool isBlock = false
+    
+    float atr = ta.atr(14)
+    float candleRange = high - low
+    float bodySize = close - open
+    
+    if bodySize > 0 and candleRange > atr and bodySize > (candleRange * i_blockBodyPercent / 100)
+        isBlock := true
+    
+    isBlock
+
+// Detect bear block candle
+f_isBearBlockCandle() =>
+    bool isBlock = false
+    
+    float atr = ta.atr(14)
+    float candleRange = high - low
+    float bodySize = open - close
+    
+    if bodySize > 0 and candleRange > atr and bodySize > (candleRange * i_blockBodyPercent / 100)
+        isBlock := true
+    
+    isBlock
+
+// ============================================================================
+// GAP ENGINE FUNCTIONS
+// ============================================================================
+
+// Detect gap conditions
+f_getGapStatus() =>
+    string status = "No Gap"
+    float gapSize = 0.0
+    float gapFillTarget = na
+    
+    float gapDiff = open - close[1]
+    
+    if gapDiff > 0
+        status := "Gap Up"
+        gapSize := gapDiff
+        gapFillTarget := close[1]
+    else if gapDiff < 0
+        status := "Gap Down"
+        gapSize := math.abs(gapDiff)
+        gapFillTarget := close[1]
+    
+    [status, gapSize, gapFillTarget]
+
+// ============================================================================
+// BIAS ENGINE FUNCTIONS
+// ============================================================================
+
+// Calculate market bias based on POC and levels
+f_getMarketBias() =>
+    string bias = "Neutral"
+    
+    [dailyPOC, dailyVAH, dailyVAL] = f_getDailyPOC()
+    [weeklyPOC, weeklyVAH, weeklyVAL] = f_getWeeklyPOC()
+    
+    if not na(dailyPOC) and not na(weeklyPOC) and not na(orHigh) and not na(orLow)
+        if close > dailyPOC and close > weeklyPOC and close > orHigh
+            bias := "Bullish"
+        else if close < dailyPOC and close < weeklyPOC and close < orLow
+            bias := "Bearish"
+        else
+            bias := "Neutral"
+    
+    bias
+
+// ============================================================================
+// SIGNAL GENERATION FUNCTIONS
+// ============================================================================
+
+// Generate BUY signal
+f_generateBuySignal() =>
+    bool buySignal = false
+    
+    string bias = f_getMarketBias()
+    string orbStatus = f_getORBStatus()
+    string volStatus = f_getVolumeStatus()
+    string liqStatus = f_getLiquidityStatus()
+    bool bullBlock = f_isBullBlockCandle()
+    
+    if bias == "Bullish" and orbStatus == "Breakout Up" and volStatus == "Strong" and liqStatus == "SSL Swept" and bullBlock
+        buySignal := true
+    else if bias == "Bullish" and orbStatus == "Breakout Up" and volStatus == "Strong"
+        buySignal := true
+    
+    buySignal
+
+// Generate SELL signal
+f_generateSellSignal() =>
+    bool sellSignal = false
+    
+    string bias = f_getMarketBias()
+    string orbStatus = f_getORBStatus()
+    string volStatus = f_getVolumeStatus()
+    string liqStatus = f_getLiquidityStatus()
+    bool bearBlock = f_isBearBlockCandle()
+    
+    if bias == "Bearish" and orbStatus == "Breakout Down" and volStatus == "Strong" and liqStatus == "BSL Swept" and bearBlock
+        sellSignal := true
+    else if bias == "Bearish" and orbStatus == "Breakout Down" and volStatus == "Strong"
+        sellSignal := true
+    
+    sellSignal
+
+// ============================================================================
+// RISK MANAGEMENT FUNCTIONS
+// ============================================================================
+
+// Calculate long stop loss (lowest low of last 3 candles)
+f_getLongStopLoss() =>
+    float stopLoss = math.min(low[1], math.min(low[2], low[3]))
+    stopLoss
+
+// Calculate short stop loss (highest high of last 3 candles)
+f_getShortStopLoss() =>
+    float stopLoss = math.max(high[1], math.max(high[2], high[3]))
+    stopLoss
+
+// ============================================================================
+// TARGET ENGINE FUNCTIONS
+// ============================================================================
+
+// Get long targets
+f_getLongTargets() =>
+    float target1 = na
+    float target2 = na
+    float target3 = na
+    
+    [dailyPOC, dailyVAH, dailyVAL] = f_getDailyPOC()
+    [weeklyPOC, weeklyVAH, weeklyVAL] = f_getWeeklyPOC()
+    
+    if not na(dailyVAH)
+        target1 := dailyVAH
+    if not na(dailyHigh)
+        target2 := dailyHigh
+    if not na(weeklyVAH)
+        target3 := weeklyVAH
+    
+    [target1, target2, target3]
+
+// Get short targets
+f_getShortTargets() =>
+    float target1 = na
+    float target2 = na
+    float target3 = na
+    
+    [dailyPOC, dailyVAH, dailyVAL] = f_getDailyPOC()
+    [weeklyPOC, weeklyVAH, weeklyVAL] = f_getWeeklyPOC()
+    
+    if not na(dailyVAL)
+        target1 := dailyVAL
+    if not na(dailyLow)
+        target2 := dailyLow
+    if not na(weeklyVAL)
+        target3 := weeklyVAL
+    
+    [target1, target2, target3]
+
+// ============================================================================
+// MAIN LOGIC
+// ============================================================================
+
+f_captureOpeningRange()
+f_updateDailyLevels()
+f_updateWeeklyLevels()
+
+string marketBias = f_getMarketBias()
+string dailyBias = f_getMarketBias()
+string weeklyBias = f_getMarketBias()
+string profileType = f_getProfileType()
+string vixStatus = f_getVIXStatus()
+string orbStatus = f_getORBStatus()
+string liqStatus = f_getLiquidityStatus()
+string volStatus = f_getVolumeStatus()
+bool buySignal = f_generateBuySignal()
+bool sellSignal = f_generateSellSignal()
+
+string tradeStatus = buySignal ? "Buy" : (sellSignal ? "Sell" : "No Trade")
+
+[dailyPOC, dailyVAH, dailyVAL] = f_getDailyPOC()
+[weeklyPOC, weeklyVAH, weeklyVAL] = f_getWeeklyPOC()
+
+// ============================================================================
+// PLOTTING FUNCTIONS
+// ============================================================================
+
+// Plot opening range
+if i_showOR and not na(orHigh) and not na(orLow)
+    plot(orHigh, "OR High", color.new(color.green, 30), linewidth=2, style=plot.style_linebr)
+    plot(orLow, "OR Low", color.new(color.red, 30), linewidth=2, style=plot.style_linebr)
+
+// Plot daily levels
+if i_showDailyLevels and not na(dailyHigh) and not na(dailyLow) and not na(dailyClose)
+    plot(dailyHigh, "Daily High", color.new(color.green, 40), linewidth=2, style=plot.style_dashed)
+    plot(dailyLow, "Daily Low", color.new(color.red, 40), linewidth=2, style=plot.style_dashed)
+    plot(dailyClose, "Daily Close", color.new(color.blue, 40), linewidth=2, style=plot.style_dashed)
+
+// Plot weekly levels
+if i_showWeeklyLevels and not na(weeklyHigh) and not na(weeklyLow) and not na(weeklyClose)
+    plot(weeklyHigh, "Weekly High", color.new(color.green, 50), linewidth=2, style=plot.style_dotted)
+    plot(weeklyLow, "Weekly Low", color.new(color.red, 50), linewidth=2, style=plot.style_dotted)
+    plot(weeklyClose, "Weekly Close", color.new(color.blue, 50), linewidth=2, style=plot.style_dotted)
+
+// Plot POC levels
+if i_showPOC
+    if not na(dailyPOC)
+        plot(dailyPOC, "Daily POC", color.new(color.blue, 40), linewidth=2, style=plot.style_dashed)
+    if not na(dailyVAH)
+        plot(dailyVAH, "Daily VAH", color.new(color.orange, 50), linewidth=1, style=plot.style_dotted)
+    if not na(dailyVAL)
+        plot(dailyVAL, "Daily VAL", color.new(color.orange, 50), linewidth=1, style=plot.style_dotted)
+    if not na(weeklyPOC)
+        plot(weeklyPOC, "Weekly POC", color.new(color.purple, 40), linewidth=2, style=plot.style_dashed)
+
+// Plot signals
+if i_showSignals
+    if buySignal
+        plotshape(buySignal, title="Buy Signal", location=location.belowbar, shape=shape.labelup, color=color.new(color.green, 0), textcolor=color.white, size=size.small, text="BUY")
+    
+    if sellSignal
+        plotshape(sellSignal, title="Sell Signal", location=location.abovebar, shape=shape.labeldown, color=color.new(color.red, 0), textcolor=color.white, size=size.small, text="SELL")
+
+// Plot risk management levels
+if i_showSignals and buySignal
+    float longSL = f_getLongStopLoss()
+    if not na(longSL)
+        plot(longSL, "Long SL", color.new(color.red, 50), linewidth=2, style=plot.style_linebr)
+
+if i_showSignals and sellSignal
+    float shortSL = f_getShortStopLoss()
+    if not na(shortSL)
+        plot(shortSL, "Short SL", color.new(color.red, 50), linewidth=2, style=plot.style_linebr)
+
+// Plot targets
+if i_showTargets
+    if buySignal
+        [t1, t2, t3] = f_getLongTargets()
+        if not na(t1)
+            plot(t1, "Long T1", color.new(color.green, 50), linewidth=1, style=plot.style_linebr)
+        if not na(t2)
+            plot(t2, "Long T2", color.new(color.green, 50), linewidth=1, style=plot.style_linebr)
+        if not na(t3)
+            plot(t3, "Long T3", color.new(color.green, 50), linewidth=1, style=plot.style_linebr)
+    
+    if sellSignal
+        [t1, t2, t3] = f_getShortTargets()
+        if not na(t1)
+            plot(t1, "Short T1", color.new(color.red, 50), linewidth=1, style=plot.style_linebr)
+        if not na(t2)
+            plot(t2, "Short T2", color.new(color.red, 50), linewidth=1, style=plot.style_linebr)
+        if not na(t3)
+            plot(t3, "Short T3", color.new(color.red, 50), linewidth=1, style=plot.style_linebr)
+
+// No trade background
+[dpoc, dvah, dval] = f_getDailyPOC()
+if profileType == "D" or volStatus == "Weak" or (not na(dvah) and not na(dval) and close > dval and close < dvah)
+    bgcolor(color.new(color.yellow, 85))
+
+// ============================================================================
+// DASHBOARD TABLE
+// ============================================================================
+
+if i_showDashboard
+    var table dashboardTable = table.new(position.top_right, 2, 10, border_color=color.new(color.gray, 50), border_width=2)
+    
+    table.cell(dashboardTable, 0, 0, "NITS Dashboard", text_color=color.white, bgcolor=color.new(color.blue, 0), text_size=size.small, text_halign=text.align_center)
+    
+    table.cell(dashboardTable, 0, 1, "Market Bias", text_color=color.white, bgcolor=color.new(color.gray, 40))
+    table.cell(dashboardTable, 1, 1, marketBias, text_color=(marketBias == "Bullish" ? color.green : (marketBias == "Bearish" ? color.red : color.yellow)), text_size=size.small, text_halign=text.align_center)
+    
+    table.cell(dashboardTable, 0, 2, "Daily Bias", text_color=color.white, bgcolor=color.new(color.gray, 40))
+    table.cell(dashboardTable, 1, 2, dailyBias, text_color=(dailyBias == "Bullish" ? color.green : (dailyBias == "Bearish" ? color.red : color.yellow)), text_size=size.small, text_halign=text.align_center)
+    
+    table.cell(dashboardTable, 0, 3, "Weekly Bias", text_color=color.white, bgcolor=color.new(color.gray, 40))
+    table.cell(dashboardTable, 1, 3, weeklyBias, text_color=(weeklyBias == "Bullish" ? color.green : (weeklyBias == "Bearish" ? color.red : color.yellow)), text_size=size.small, text_halign=text.align_center)
+    
+    table.cell(dashboardTable, 0, 4, "Profile Type", text_color=color.white, bgcolor=color.new(color.gray, 40))
+    table.cell(dashboardTable, 1, 4, profileType, text_color=color.white, text_size=size.small, text_halign=text.align_center)
+    
+    table.cell(dashboardTable, 0, 5, "VIX Status", text_color=color.white, bgcolor=color.new(color.gray, 40))
+    table.cell(dashboardTable, 1, 5, vixStatus, text_color=(vixStatus == "High" ? color.red : (vixStatus == "Low" ? color.green : color.yellow)), text_size=size.small, text_halign=text.align_center)
+    
+    table.cell(dashboardTable, 0, 6, "ORB Status", text_color=color.white, bgcolor=color.new(color.gray, 40))
+    table.cell(dashboardTable, 1, 6, orbStatus, text_color=color.white, text_size=size.small, text_halign=text.align_center)
+    
+    table.cell(dashboardTable, 0, 7, "Liquidity Status", text_color=color.white, bgcolor=color.new(color.gray, 40))
+    table.cell(dashboardTable, 1, 7, liqStatus, text_color=(liqStatus == "SSL Swept" or liqStatus == "BSL Swept" ? color.orange : color.white), text_size=size.small, text_halign=text.align_center)
+    
+    table.cell(dashboardTable, 0, 8, "Volume Status", text_color=color.white, bgcolor=color.new(color.gray, 40))
+    table.cell(dashboardTable, 1, 8, volStatus, text_color=(volStatus == "Strong" ? color.green : (volStatus == "Weak" ? color.red : color.yellow)), text_size=size.small, text_halign=text.align_center)
+    
+    table.cell(dashboardTable, 0, 9, "Trade Status", text_color=color.white, bgcolor=color.new(color.gray, 40))
+    table.cell(dashboardTable, 1, 9, tradeStatus, text_color=(tradeStatus == "Buy" ? color.green : (tradeStatus == "Sell" ? color.red : color.yellow)), text_size=size.small, text_halign=text.align_center)
+
+// ============================================================================
+// ALERTS
+// ============================================================================
+
+if i_enableAlerts
+    if buySignal
+        alert("🟢 NIFTY BUY SIGNAL - Institutional Setup Confirmed", alert.freq_once_per_bar_close)
+    
+    if sellSignal
+        alert("🔴 NIFTY SELL SIGNAL - Institutional Setup Confirmed", alert.freq_once_per_bar_close)
+    
+    if orbStatus == "Breakout Up"
+        alert("📈 NIFTY ORB UP - Opening Range Breakout", alert.freq_once_per_bar_close)
+    
+    if orbStatus == "Breakout Down"
+        alert("📉 NIFTY ORB DOWN - Opening Range Breakdown", alert.freq_once_per_bar_close)
+    
+    if liqStatus == "SSL Swept"
+        alert("🌊 NIFTY SSL SWEEP - Support Swept", alert.freq_once_per_bar_close)
+    
+    if liqStatus == "BSL Swept"
+        alert("🌊 NIFTY BSL SWEEP - Resistance Swept", alert.freq_once_per_bar_close)
+
+// ============================================================================
+// END OF INDICATOR
+// ============================================================================

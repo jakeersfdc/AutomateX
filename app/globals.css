@@ -17,9 +17,24 @@
 }
 
 body {
-  background: var(--background);
+  background: radial-gradient(circle at top, rgba(14,165,164,0.15), transparent 25%),
+    radial-gradient(circle at 80% 0%, rgba(59,130,246,0.12), transparent 20%),
+    var(--background);
   color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+  font-family: var(--font-sans), Arial, Helvetica, sans-serif;
+  min-height: 100vh;
+}
+
+.bf-card {
+  background: rgba(7, 16, 38, 0.95);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  box-shadow: 0 24px 80px rgba(2, 10, 24, 0.35);
+  backdrop-filter: blur(18px);
+}
+
+.bf-panel {
+  background: linear-gradient(180deg, rgba(8, 19, 42, 0.95), rgba(2, 6, 23, 0.92));
+  border: 1px solid rgba(255, 255, 255, 0.06);
 }
 
 /* Sidebar visuals for trading-dark theme */

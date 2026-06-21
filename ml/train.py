@@ -12,6 +12,10 @@ import argparse
 import os
 import warnings
 from datetime import datetime
+from typing import Dict, List, Optional
+import json
+import urllib.parse
+import urllib.request
 import pandas as pd
 import numpy as np
 import yfinance as yf
@@ -154,8 +158,98 @@ def compute_features(df: pd.DataFrame) -> pd.DataFrame:
     return df
 
 
+def _normalize_interval(interval: str) -> str:
+    interval = interval.lower().strip()
+    if interval == '1h':
+        return '60m'
+    if interval == '1d':
+        return '1d'
+    return interval
+
+
+def _default_intraday_period(interval: str) -> str:
+    interval = interval.lower().strip()
+    if interval in ['1m', '2m', '5m']:
+        return '30d'
+    if interval in ['15m', '30m']:
+        return '60d'
+    if interval in ['60m', '1h']:
+        return '730d'
+    return '730d'
+
+
+def _load_from_polygon(symbol: str, interval: str, start: Optional[str], end: Optional[str]) -> pd.DataFrame:
+    api_key = os.environ.get('POLYGON_API_KEY')
+    if not api_key:
+        raise RuntimeError('POLYGON_API_KEY must be set to use provider=polygon')
+
+    interval = interval.lower().strip()
+    if interval == '1h':
+        interval = '60m'
+    if interval not in ['1m', '2m', '5m', '15m', '30m', '60m']:
+        raise RuntimeError(f'Unsupported polygon interval: {interval}')
+
+    if not start or not end:
+        raise RuntimeError('start and end dates are required for polygon provider')
+
+    from_date = datetime.fromisoformat(start).strftime('%Y-%m-%d')
+    to_date = datetime.fromisoformat(end).strftime('%Y-%m-%d')
+    encoded_symbol = urllib.parse.quote(symbol, safe='')
+    url = (
+        f'https://api.polygon.io/v2/aggs/ticker/{encoded_symbol}/range/1/{interval}/{from_date}/{to_date}'
+        f'?adjusted=true&sort=asc&limit=50000&apiKey={urllib.parse.quote(api_key)}'
+    )
+
+    with urllib.request.urlopen(url) as resp:
+        body = resp.read()
+        payload = json.loads(body.decode('utf-8'))
+
+    if not payload.get('results'):
+        raise RuntimeError('Polygon returned no data for symbol ' + symbol)
+
+    rows = []
+    for item in payload['results']:
+        rows.append({
+            'date': datetime.utcfromtimestamp(item['t'] / 1000),
+            'open': item['o'],
+            'high': item['h'],
+            'low': item['l'],
+            'close': item['c'],
+            'volume': item['v'],
+        })
+    df = pd.DataFrame(rows).set_index('date')
+    return df
+
+
+def load_ohlcv(symbol: str, interval: str = '1d', period: Optional[str] = None, start: Optional[str] = None, end: Optional[str] = None, csv_path: Optional[str] = None, provider: Optional[str] = None) -> pd.DataFrame:
+    """Load OHLCV data for a symbol, using a provider, CSV fallback, or yfinance history."""
+    if csv_path:
+        if not os.path.exists(csv_path):
+            raise RuntimeError(f'CSV path not found: {csv_path}')
+        df = pd.read_csv(csv_path, parse_dates=True, index_col=0)
+        if df.empty:
+            raise RuntimeError('CSV data is empty')
+        return df
+
+    interval = _normalize_interval(interval)
+    if period is None:
+        period = _default_intraday_period(interval)
+
+    if provider == 'polygon':
+        return _load_from_polygon(symbol, interval, start, end)
+
+    if interval in ['1d', '1wk', '1mo']:
+        df = yf.download(symbol, start=start, end=end, interval=interval, period=period, progress=False)
+    else:
+        df = yf.download(symbol, period=period, interval=interval, progress=False)
+
+    if df is None or df.shape[0] < 100:
+        raise RuntimeError('insufficient historical data for interval ' + interval)
+    return df
+
+
 def build_labels(df: pd.DataFrame, horizon=1, threshold=0.005) -> pd.Series:
-    """Label: 1 if price rises > threshold in next horizon days, else 0."""
+    """Label: 1 if price rises > threshold in next horizon bars, else 0."""
     future = df['close'].shift(-horizon)
     ret = (future - df['close']) / df['close']
     labels = (ret > threshold).astype(int)
@@ -185,104 +279,123 @@ def walk_forward_validate(X, y, n_splits=5):
     }
 
 
-def train_for_symbol(symbol: str, start: str = None, end: str = None, out_dir: str = 'ml/models'):
-    print(f"Training for {symbol} start={start} end={end}")
-    df = yf.download(symbol, start=start, end=end, progress=False)
+def train_for_symbol(
+    symbol: str,
+    start: str = None,
+    end: str = None,
+    interval: str = '1d',
+    period: str = None,
+    horizons: Optional[List[int]] = None,
+    threshold: float = 0.005,
+    out_dir: str = 'ml/models',
+    csv_path: Optional[str] = None,
+    provider: Optional[str] = None,
+):
+    if horizons is None:
+        horizons = [1]
+    print(f"Training for {symbol} interval={interval} horizons={horizons} start={start} end={end} period={period} provider={provider}")
+    df = load_ohlcv(symbol, interval=interval, period=period, start=start, end=end, csv_path=csv_path, provider=provider)
     if df is None or df.shape[0] < 100:
         raise RuntimeError('insufficient historical data (need 100+ bars)')
 
     features = compute_features(df)
-    labels = build_labels(features, horizon=1, threshold=0.005)
-    data = features.copy()
-    data['label'] = labels
-    data = data.dropna()
-    if data.empty or data.shape[0] < 100:
-        raise RuntimeError('insufficient data after feature build')
+    if features.empty:
+        raise RuntimeError('no features generated from historical data')
 
-    X = data[FEATURE_COLS]
-    y = data['label']
-
-    # Scale features for better convergence
+    X = features[FEATURE_COLS]
     scaler = StandardScaler()
     X_scaled = pd.DataFrame(scaler.fit_transform(X), columns=X.columns, index=X.index)
 
-    # Walk-forward validation first
-    wf_metrics = walk_forward_validate(X_scaled, y, n_splits=5)
-    print(f"Walk-forward CV: F1={wf_metrics['avg_f1']:.3f} Prec={wf_metrics['avg_precision']:.3f} Rec={wf_metrics['avg_recall']:.3f}")
+    models: Dict[str, Any] = {}
+    horizon_metrics: Dict[str, Dict[str, float]] = {}
 
-    # Train/test split (chronological, no shuffle for time series)
-    split_idx = int(len(X_scaled) * 0.8)
-    X_train, X_test = X_scaled.iloc[:split_idx], X_scaled.iloc[split_idx:]
-    y_train, y_test = y.iloc[:split_idx], y.iloc[split_idx:]
+    for horizon in horizons:
+        labels = build_labels(features, horizon=horizon, threshold=threshold)
+        data = features.copy()
+        data['label'] = labels
+        data = data.dropna()
+        if data.empty or data.shape[0] < 100:
+            print(f"Skipping horizon={horizon}: insufficient labeled data after feature build")
+            continue
 
-    # Build ensemble of available classifiers
-    estimators = []
+        X_h = X_scaled.loc[data.index]
+        y_h = data['label']
 
-    # GradientBoosting (always available)
-    gb = GradientBoostingClassifier(
-        n_estimators=300, max_depth=4, learning_rate=0.05,
-        subsample=0.8, min_samples_leaf=20, random_state=42
-    )
-    estimators.append(('gb', gb))
+        wf_metrics = walk_forward_validate(X_h, y_h, n_splits=5)
+        print(f"Horizon {horizon}: Walk-forward CV: F1={wf_metrics['avg_f1']:.3f} Prec={wf_metrics['avg_precision']:.3f} Rec={wf_metrics['avg_recall']:.3f}")
 
-    # RandomForest
-    rf = RandomForestClassifier(
-        n_estimators=300, max_depth=6, min_samples_leaf=20,
-        random_state=42, n_jobs=-1
-    )
-    estimators.append(('rf', rf))
+        split_idx = int(len(X_h) * 0.8)
+        X_train, X_test = X_h.iloc[:split_idx], X_h.iloc[split_idx:]
+        y_train, y_test = y_h.iloc[:split_idx], y_h.iloc[split_idx:]
 
-    # XGBoost
-    if HAS_XGB:
-        xgb = XGBClassifier(
+        estimators = []
+        gb = GradientBoostingClassifier(
             n_estimators=300, max_depth=4, learning_rate=0.05,
-            subsample=0.8, colsample_bytree=0.8,
-            min_child_weight=20, eval_metric='logloss',
-            random_state=42, verbosity=0
+            subsample=0.8, min_samples_leaf=20, random_state=42
         )
-        estimators.append(('xgb', xgb))
+        estimators.append(('gb', gb))
 
-    # LightGBM
-    if HAS_LGBM:
-        lgbm = LGBMClassifier(
-            n_estimators=300, max_depth=4, learning_rate=0.05,
-            subsample=0.8, colsample_bytree=0.8,
-            min_child_weight=20, random_state=42, verbose=-1
+        rf = RandomForestClassifier(
+            n_estimators=300, max_depth=6, min_samples_leaf=20,
+            random_state=42, n_jobs=-1
         )
-        estimators.append(('lgbm', lgbm))
+        estimators.append(('rf', rf))
 
-    print(f"Ensemble models: {[n for n, _ in estimators]}")
+        if HAS_XGB:
+            xgb = XGBClassifier(
+                n_estimators=300, max_depth=4, learning_rate=0.05,
+                subsample=0.8, colsample_bytree=0.8,
+                min_child_weight=20, eval_metric='logloss',
+                random_state=42, verbosity=0
+            )
+            estimators.append(('xgb', xgb))
 
-    # Soft voting ensemble for calibrated probabilities
-    ensemble = VotingClassifier(estimators=estimators, voting='soft', n_jobs=-1)
-    ensemble.fit(X_train, y_train)
+        if HAS_LGBM:
+            lgbm = LGBMClassifier(
+                n_estimators=300, max_depth=4, learning_rate=0.05,
+                subsample=0.8, colsample_bytree=0.8,
+                min_child_weight=20, random_state=42, verbose=-1
+            )
+            estimators.append(('lgbm', lgbm))
 
-    # Calibrate probabilities with isotonic regression
-    calibrated = CalibratedClassifierCV(ensemble, cv=3, method='isotonic')
-    calibrated.fit(X_train, y_train)
+        print(f"Horizon {horizon}: Ensemble models: {[n for n, _ in estimators]}")
+        ensemble = VotingClassifier(estimators=estimators, voting='soft', n_jobs=-1)
+        ensemble.fit(X_train, y_train)
 
-    # Evaluate
-    preds = calibrated.predict(X_test)
-    probs = calibrated.predict_proba(X_test)
-    rep = classification_report(y_test, preds, output_dict=False, zero_division=0)
-    f1 = f1_score(y_test, preds, zero_division=0)
-    print(f'\nTest F1: {f1:.4f}')
-    print('Classification report:\n', rep)
+        calibrated = CalibratedClassifierCV(ensemble, cv=3, method='isotonic')
+        calibrated.fit(X_train, y_train)
 
-    # Save model bundle
+        preds = calibrated.predict(X_test)
+        f1 = f1_score(y_test, preds, zero_division=0)
+        rep = classification_report(y_test, preds, output_dict=False, zero_division=0)
+        print(f'\nHorizon {horizon} Test F1: {f1:.4f}')
+        print('Classification report:\n', rep)
+
+        models[str(horizon)] = calibrated
+        horizon_metrics[str(horizon)] = {
+            'test_f1': float(f1),
+            'walk_forward': wf_metrics,
+            'samples': int(len(y_h)),
+            'positive_ratio': float(y_h.mean()),
+        }
+
+    if not models:
+        raise RuntimeError('no valid horizon models were trained')
+
     os.makedirs(out_dir, exist_ok=True)
     model_path = os.path.join(out_dir, f"{symbol.replace('/', '_')}.joblib")
     bundle = {
-        'model': calibrated,
+        'models': models,
         'scaler': scaler,
         'columns': FEATURE_COLS,
         'symbol': symbol,
+        'interval': interval,
+        'horizons': horizons,
+        'threshold': threshold,
+        'provider': provider,
         'train_end': str(end or datetime.today().strftime('%Y-%m-%d')),
-        'metrics': {
-            'test_f1': float(f1),
-            'walk_forward': wf_metrics,
-        },
-        'version': '2.0',
+        'metrics': horizon_metrics,
+        'version': '3.0',
     }
     joblib.dump(bundle, model_path)
     print('Saved model to', model_path)
@@ -294,10 +407,28 @@ def main():
     p.add_argument('--symbol', required=True)
     p.add_argument('--start', default='2018-01-01')
     p.add_argument('--end', default=datetime.today().strftime('%Y-%m-%d'))
+    p.add_argument('--interval', default='1d', help='OHLCV interval: 1d, 1h, 15m, 5m, etc.')
+    p.add_argument('--period', default=None, help='Historical period for intraday data (e.g. 60d)')
+    p.add_argument('--horizons', default='1', help='Comma-separated horizon steps in bars, e.g. 1,3,5')
+    p.add_argument('--threshold', type=float, default=0.005, help='Minimum return threshold for a positive label')
+    p.add_argument('--csv', default=None, help='Optional CSV path containing OHLCV data')
+    p.add_argument('--provider', default=None, help='Optional data provider: polygon')
     p.add_argument('--out', default='ml/models')
     args = p.parse_args()
 
-    model = train_for_symbol(args.symbol, start=args.start, end=args.end, out_dir=args.out)
+    horizons = [int(x) for x in args.horizons.split(',') if x.strip().isdigit()]
+    model = train_for_symbol(
+        args.symbol,
+        start=args.start,
+        end=args.end,
+        interval=args.interval,
+        period=args.period,
+        horizons=horizons,
+        threshold=args.threshold,
+        out_dir=args.out,
+        csv_path=args.csv,
+        provider=args.provider,
+    )
     print(model)
 
 

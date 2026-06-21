@@ -37,7 +37,17 @@ export async function GET(req: Request) {
       } else {
         // Fallback: hit our own /api/predict
         const origin = process.env.NEXT_PUBLIC_URL || 'http://localhost:3000';
-        const res = await fetch(`${origin}/api/predict?symbol=${encodeURIComponent(symbol)}`, {
+        const interval = url.searchParams.get('interval') || '1d';
+        const horizons = url.searchParams.get('horizons');
+        const provider = url.searchParams.get('provider');
+        let predictUrl = `${origin}/api/predict?symbol=${encodeURIComponent(symbol)}&interval=${encodeURIComponent(interval)}`;
+        if (horizons) {
+          predictUrl += `&horizons=${encodeURIComponent(horizons)}`;
+        }
+        if (provider) {
+          predictUrl += `&provider=${encodeURIComponent(provider)}`;
+        }
+        const res = await fetch(predictUrl, {
           headers: { 'Cookie': '' }, // internal call
         });
         if (res.ok) mlPrediction = await res.json();
@@ -51,6 +61,11 @@ export async function GET(req: Request) {
       symbol,
       technical: taSignal,
       ml: mlPrediction,
+      reason: mlPrediction?.reason ?? taSignal?.reason ?? '',
+      analysis: {
+        technical: taSignal?.reason ?? null,
+        ml: mlPrediction?.reason ?? null,
+      },
       // Ensemble decision: weight ML higher when available
       signal: mlPrediction?.action || taSignal?.signal || 'HOLD',
       entry: mlPrediction?.entry ?? taSignal?.entryPrice ?? null,

@@ -41,6 +41,7 @@ type Signal = {
   strength: number;
   confidence: number;
   reason: string;
+  indicators?: Record<string, any> | null;
   fnoRecommendation: FnORec | null;
   currentPrice?: number | null;
   timestamp?: string | null;
@@ -135,6 +136,28 @@ function timeAgo(ts: string) {
   return `${Math.floor(s / 3600)}h ago`;
 }
 
+function normalizeSignal(signal: string | null | undefined): string {
+  const s = String(signal ?? "").trim().toUpperCase();
+  if (s.includes("BUY")) return "BUY";
+  if (s.includes("SELL")) return "SELL";
+  if (s === "EXIT") return "EXIT";
+  if (s === "HOLD") return "HOLD";
+  return "HOLD";
+}
+
+function isExactPrediction(signal: Signal): boolean {
+  const s = normalizeSignal(signal.signal);
+  return (s === "BUY" || s === "SELL") && (signal.confidence >= 0.7 || signal.strength >= 70);
+}
+
+function getBestFeatures(reason: string, max = 3): string[] {
+  return reason
+    .split("|")
+    .map((item) => item.trim())
+    .filter((item) => item && !item.startsWith("S:") && !item.startsWith("R:"))
+    .slice(0, max);
+}
+
 const SUGGESTED_LOTS = [1, 3, 5, 10, 20, 30, 40] as const;
 const LOT_SIZES = [...SUGGESTED_LOTS];
 
@@ -227,15 +250,16 @@ function formatTradeCall(
   expiryOverride?: string | null,
 ) {
   const tk = strikeStepFor(indexName, spot) || tickForSymbol(indexName);
-  const strikeVal = strike ?? Math.round(spot / tk) * tk;
-  // Use live NSE premium when available, else Black-Scholes estimate
+  const baseStrike = Number.isFinite(strike ?? NaN) && (strike ?? 0) > 0 ? (strike as number) : Math.round(spot / tk) * tk;
+  const strikeVal = Number.isFinite(baseStrike) && baseStrike > 0 ? baseStrike : Math.round(spot / tk) * tk;
   const { expiryStr } = getExpiryFor(indexName);
   const expLabel = expiryOverride ?? expiryStr;
-  const premium = livePremium && livePremium > 0 ? livePremium : estimatePremium(spot, strikeVal, isCall);
+  const rawPremium = livePremium && livePremium > 0 ? livePremium : estimatePremium(spot, strikeVal, isCall);
+  const premium = Number.isFinite(rawPremium) && rawPremium > 0 ? rawPremium : 0;
   const isLiveP = livePremium != null && livePremium > 0;
   const { sl, t1, t2, t3 } = estimateOptionSLTarget(premium, strength);
-  const lo = Math.floor(premium / 5) * 5 || Math.floor(premium);
-  const hi = lo + 5;
+  const lo = Number.isFinite(premium) ? Math.floor(premium / 5) * 5 || Math.floor(premium) : 0;
+  const hi = Number.isFinite(lo) ? lo + 5 : 0;
   const optType = isCall ? "CE" : "PE";
   const contractLot = getLotSize(indexName) ?? null;
   const lotLine = contractLot
@@ -259,7 +283,7 @@ function formatTradeCall(
 }
 
 function Badge({ signal }: { signal: string }) {
-  const s = String(signal).toUpperCase();
+  const s = normalizeSignal(signal);
   const c =
     s === "BUY"
       ? "bg-green-500 text-black shadow-lg shadow-green-500/30"
@@ -803,17 +827,33 @@ export default function DashboardClient() {
       strength: s.strength ?? 0,
       confidence: s.confidence ?? 0,
       reason: s.reason ?? "",
+      indicators: s.indicators ?? null,
       fnoRecommendation: s.fnoRecommendation ?? null,
       timestamp: s.timestamp ?? null,
     }))
     .sort((a, b) => {
       const ord: Record<string, number> = { BUY: 0, SELL: 1, EXIT: 2 };
-      const ao = ord[String(a.signal).toUpperCase()] ?? 3;
-      const bo = ord[String(b.signal).toUpperCase()] ?? 3;
+      const ao = ord[normalizeSignal(a.signal)] ?? 3;
+      const bo = ord[normalizeSignal(b.signal)] ?? 3;
       return ao !== bo ? ao - bo : b.strength - a.strength;
     });
 
-  const actionable = processed.filter((s) => ["BUY", "SELL", "EXIT"].includes(String(s.signal).toUpperCase()));
+  const actionable = processed.filter((s) => ["BUY", "SELL", "EXIT"].includes(normalizeSignal(s.signal)));
+  const bestSignal = useMemo<Signal | null>(() => {
+    if (processed.length === 0) return null;
+    const exactSignals = processed.filter(isExactPrediction);
+    const score = (signal: Signal) => {
+      const s = normalizeSignal(signal.signal);
+      const base = signal.confidence * 100 + signal.strength;
+      const sideRank = s === "BUY" ? 0 : s === "SELL" ? 1 : 2;
+      return sideRank * 10000 + base;
+    };
+    if (exactSignals.length > 0) {
+      return [...exactSignals].sort((a, b) => score(b) - score(a))[0];
+    }
+    const candidate = processed.filter((s) => ["BUY", "SELL"].includes(normalizeSignal(s.signal)));
+    return candidate.length > 0 ? [...candidate].sort((a, b) => score(b) - score(a))[0] : null;
+  }, [processed]);
   const indiaIdx = indices.filter((i) => INDIA_IDS.includes(i.id));
   const globalIdx = indices.filter((i) => GLOBAL_IDS.includes(i.id));
   const commodityIdx = indices.filter((i) => COMMODITY_IDS.includes(i.id));
@@ -842,32 +882,24 @@ export default function DashboardClient() {
 
   /* ═══════════════════════ RENDER ═══════════════════════ */
   return (
-    <div className="px-2 sm:px-3 py-2 space-y-3 sm:space-y-4 text-sm text-white">
+    <div className="px-2 sm:px-3 py-3 space-y-4 text-sm text-white">
 
       {/* ━━━ TOP HEADER ━━━ */}
-      <header className="flex items-center justify-between flex-wrap gap-2">
-        <div className="flex items-center gap-2 sm:gap-3 flex-wrap">
-          <h1 className="text-base sm:text-lg font-extrabold tracking-tight text-white">⚡ ProfitForce</h1>
-          <span className={`px-2 sm:px-3 py-1 rounded-full text-[10px] sm:text-xs font-bold ${isMarketOpen ? "bg-green-500/20 text-green-400 ring-1 ring-green-500/40" : "bg-red-500/20 text-red-400 ring-1 ring-red-500/40"}`}>
-            <span className={`inline-block w-2 h-2 rounded-full mr-1 ${isMarketOpen ? "bg-green-400 animate-pulse" : "bg-red-400"}`} />
+      <header className="bf-card rounded-3xl border border-white/10 p-4 shadow-xl shadow-cyan-500/5 flex items-center justify-between flex-wrap gap-4">
+        <div className="flex items-center gap-3 flex-wrap">
+          <div>
+            <h1 className="text-xl sm:text-2xl font-extrabold tracking-tight text-white">⚡ ProfitForce</h1>
+            <p className="text-xs text-white/50 mt-1 max-w-xl">A cleaner signal hub for Indian markets with watchlists, alerts and performance summaries.</p>
+          </div>
+          <span className={`px-3 py-1 rounded-full text-[10px] sm:text-xs font-semibold ${isMarketOpen ? "bg-emerald-500/15 text-emerald-300 ring-1 ring-emerald-500/25" : "bg-rose-500/15 text-rose-300 ring-1 ring-rose-500/25"}`}>
+            <span className={`inline-block w-2 h-2 rounded-full mr-1 ${isMarketOpen ? "bg-emerald-400 animate-pulse" : "bg-rose-400"}`} />
             {marketStatus}
           </span>
-          {!subLoading && false && (
-            <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${
-              isElite ? "bg-purple-500/20 text-purple-400 ring-1 ring-purple-500/40" :
-              isPro ? "bg-blue-500/20 text-blue-400 ring-1 ring-blue-500/40" :
-              "bg-gray-500/20 text-gray-400 ring-1 ring-gray-500/40"
-            }`}>
-              {isElite ? "👑 ELITE" : isPro ? "⭐ PRO" : "FREE"}
-            </span>
-          )}
-          {lastRefresh && <span className="text-[10px] text-white/40">Updated {lastRefresh}</span>}
+          {lastRefresh && <span className="text-[10px] text-white/50">Updated {lastRefresh}</span>}
         </div>
-        <div className="flex items-center gap-1">
-          <button onClick={() => setSoundOn(!soundOn)} className="p-1.5 rounded hover:bg-white/10 text-white/50 text-xs" title="Toggle sound">
-            {soundOn ? "🔔" : "🔕"}
-          </button>
-          <button onClick={forceRefresh} className="p-1.5 rounded hover:bg-white/10 text-white/50 text-xs" title="Refresh">↻</button>
+        <div className="flex items-center gap-2">
+          <button onClick={() => setSoundOn(!soundOn)} className="rounded-2xl border border-white/10 bg-white/5 px-3 py-2 text-[10px] font-semibold text-white/70 hover:text-white hover:bg-white/10 transition">{soundOn ? "🔔 Sound On" : "🔕 Sound Off"}</button>
+          <button onClick={forceRefresh} className="rounded-2xl bg-sky-500 px-3 py-2 text-[10px] font-semibold text-white hover:bg-sky-400 transition">Refresh</button>
         </div>
       </header>
 
@@ -887,15 +919,17 @@ export default function DashboardClient() {
       )}
 
       {/* ━━━ MAIN VIEW TOGGLE: Signals / Trading ━━━ */}
-      <div className="flex rounded-xl overflow-hidden border border-gray-700/50 bg-[#0a1628]">
-        <button
-          onClick={() => setActiveView("signals")}
-          className={`flex-1 py-2.5 text-sm font-bold transition-colors ${activeView === "signals" ? "bg-blue-600 text-white" : "text-gray-500 hover:text-gray-300"}`}
-        >📡 Signals</button>
-        <button
-          onClick={() => setActiveView("trading")}
-          className={`flex-1 py-2.5 text-sm font-bold transition-colors ${activeView === "trading" ? "bg-blue-600 text-white" : "text-gray-500 hover:text-gray-300"}`}
-        >💹 Trading</button>
+      <div className="bf-card rounded-3xl overflow-hidden border border-white/10">
+        <div className="grid grid-cols-2">
+          <button
+            onClick={() => setActiveView("signals")}
+            className={`py-3 text-sm font-semibold transition-colors ${activeView === "signals" ? "bg-cyan-500/15 text-cyan-200" : "text-white/60 hover:text-white hover:bg-white/5"}`}
+          >📡 Signals</button>
+          <button
+            onClick={() => setActiveView("trading")}
+            className={`py-3 text-sm font-semibold transition-colors ${activeView === "trading" ? "bg-cyan-500/15 text-cyan-200" : "text-white/60 hover:text-white hover:bg-white/5"}`}
+          >💹 Trading</button>
+        </div>
       </div>
 
       {/* ━━━ TRADING VIEW ━━━ */}
@@ -929,7 +963,7 @@ export default function DashboardClient() {
         <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 sm:gap-3">
           {indiaIdx.map((idx) => {
             const idxSig = signals.find(s => s.symbol === idx.sym);
-            return <IndexCard key={idx.id} idx={idx} fl={flash[idx.id]} onChartClick={() => setChartTarget({ symbol: idx.sym, name: idx.name, entry: idxSig?.entryPrice ?? null, sl: idxSig?.stopLoss ?? null, target: idxSig?.targetPrice ?? null, signal: String(idxSig?.signal ?? "HOLD"), currentPrice: idx.price })} />;
+            return <IndexCard key={idx.id} idx={idx} fl={flash[idx.id]} onChartClick={() => setChartTarget({ symbol: idx.sym, name: idx.name, entry: idxSig?.entryPrice ?? null, sl: idxSig?.stopLoss ?? null, target: idxSig?.targetPrice ?? null, signal: normalizeSignal(idxSig?.signal), currentPrice: idx.price })} />;
           })}
         </div>
       </section>
@@ -1061,6 +1095,55 @@ export default function DashboardClient() {
           </div>
 
           <div className="rounded-lg border border-white/8 overflow-hidden relative">
+            <div className="border-b border-white/10 bg-slate-950/80 p-4">
+              {bestSignal ? (
+                <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                  <div className="min-w-0">
+                    <div className="text-[10px] uppercase tracking-[0.28em] text-emerald-300 font-bold">Best signal</div>
+                    <div className="mt-1 flex flex-wrap items-center gap-2">
+                      <span className="text-sm font-extrabold text-white">{normalizeSignal(bestSignal.signal)} {bestSignal.symbol}</span>
+                      {isExactPrediction(bestSignal) ? (
+                        <span className="rounded-full bg-emerald-500/10 text-emerald-300 px-2 py-1 text-[10px] uppercase tracking-[0.18em]">EXACT PREDICTION</span>
+                      ) : (
+                        <span className="rounded-full bg-sky-500/10 text-sky-300 px-2 py-1 text-[10px] uppercase tracking-[0.18em]">Best live signal</span>
+                      )}
+                    </div>
+                    {bestSignal.reason ? (
+                      <div className="mt-2 text-[11px] text-[var(--bf-muted)] max-w-2xl">{bestSignal.reason}</div>
+                    ) : null}
+                  </div>
+                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-[11px]">
+                    <div className="rounded-lg bg-black/70 p-2 text-center">
+                      <div className="text-[9px] text-[var(--bf-muted)] uppercase tracking-widest">Entry</div>
+                      <div className="font-mono font-bold text-emerald-300">{INR(bestSignal.entryPrice)}</div>
+                    </div>
+                    <div className="rounded-lg bg-black/70 p-2 text-center">
+                      <div className="text-[9px] text-[var(--bf-muted)] uppercase tracking-widest">Stop</div>
+                      <div className="font-mono font-bold text-rose-300">{INR(bestSignal.stopLoss)}</div>
+                    </div>
+                    <div className="rounded-lg bg-black/70 p-2 text-center">
+                      <div className="text-[9px] text-[var(--bf-muted)] uppercase tracking-widest">Target</div>
+                      <div className="font-mono font-bold text-sky-300">{INR(bestSignal.targetPrice)}</div>
+                    </div>
+                    <div className="rounded-lg bg-black/70 p-2 text-center">
+                      <div className="text-[9px] text-[var(--bf-muted)] uppercase tracking-widest">Confidence</div>
+                      <div className="font-bold text-emerald-300">{Math.round(bestSignal.confidence * 100)}%</div>
+                    </div>
+                  </div>
+                </div>
+              ) : (
+                <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+                  <div>
+                    <div className="text-[10px] uppercase tracking-[0.28em] text-sky-300 font-bold">Best signal</div>
+                    <div className="mt-1 text-sm font-extrabold text-white">No exact/high-confidence signal right now</div>
+                    <div className="mt-2 text-[11px] text-[var(--bf-muted)] max-w-2xl">The dashboard will highlight the best BUY or SELL opportunity here when live signals are available.</div>
+                  </div>
+                  <div className="rounded-xl border border-white/10 bg-white/5 px-3 py-2 text-[11px] text-white/70">
+                    Need a stronger signal? Look for <span className="font-bold text-emerald-300">confidence ≥70%</span> or <span className="font-bold text-emerald-300">strength ≥70%</span>.
+                  </div>
+                </div>
+              )}
+            </div>
             {signalsLoading && (
               <div className="absolute inset-0 z-10 bg-black/60 flex items-center justify-center">
                 <div className="w-8 h-8 border-2 border-t-transparent border-emerald-400 rounded-full animate-spin" />
@@ -1086,19 +1169,20 @@ export default function DashboardClient() {
                 </thead>
                 <tbody className="divide-y divide-white/5">
                   {processed.map((row, i) => {
-                    const sig = String(row.signal).toUpperCase();
+                    const sig = normalizeSignal(row.signal);
                     const act = ["BUY", "SELL", "EXIT"].includes(sig);
                     const exp = expandedSym === row.symbol;
                     const e = Number(row.entryPrice ?? 0);
                     const sl = Number(row.stopLoss ?? 0);
                     const tgt = Number(row.targetPrice ?? 0);
                     const rr = e && sl && tgt ? `1:${(Math.abs(tgt - e) / Math.abs(e - sl)).toFixed(1)}` : "—";
+                    const isBestRow = bestSignal ? row.symbol === bestSignal.symbol && normalizeSignal(row.signal) === normalizeSignal(bestSignal.signal) : false;
 
                     return (
                       <React.Fragment key={`${row.symbol}-${i}`}>
                         <tr
                           onClick={() => toggleRow(row.symbol)}
-                          className={`cursor-pointer transition-colors hover:bg-white/3 ${act ? "" : "opacity-50"} ${exp ? "bg-white/5" : ""}`}
+                          className={`cursor-pointer transition-colors hover:bg-white/3 ${act ? "" : "opacity-50"} ${exp ? "bg-white/5" : ""} ${isBestRow ? "ring-1 ring-emerald-400/30 bg-emerald-500/10" : ""}`}
                         >
                           <td className="px-2 py-2">
                             <span className={`inline-block text-[10px] mr-1 transition-transform ${exp ? "rotate-90" : ""}`}>▶</span>
@@ -1121,7 +1205,7 @@ export default function DashboardClient() {
                             </div>
                           </td>
                           <td className="px-2 py-2 text-center">
-                            <button onClick={(ev) => { ev.stopPropagation(); setChartTarget({ symbol: row.symbol, name: row.name ?? row.symbol, entry: row.entryPrice, sl: row.stopLoss, target: row.targetPrice, signal: row.signal, currentPrice: row.currentPrice ?? row.entryPrice }); }} className="p-1 rounded hover:bg-white/10 text-white/50 hover:text-white transition-colors" title="View chart">📊</button>
+                            <button onClick={(ev) => { ev.stopPropagation(); setChartTarget({ symbol: row.symbol, name: row.name ?? row.symbol, entry: row.entryPrice, sl: row.stopLoss, target: row.targetPrice, signal: normalizeSignal(row.signal), currentPrice: row.currentPrice ?? row.entryPrice }); }} className="p-1 rounded hover:bg-white/10 text-white/50 hover:text-white transition-colors" title="View chart">📊</button>
                           </td>
                         </tr>
 
@@ -1181,18 +1265,20 @@ export default function DashboardClient() {
             {/* Mobile */}
             <div className="md:hidden divide-y divide-white/5">
               {processed.map((row, i) => {
-                const sig = String(row.signal).toUpperCase();
+                const sig = normalizeSignal(row.signal);
                 const act = ["BUY", "SELL", "EXIT"].includes(sig);
                 const e = Number(row.entryPrice ?? 0);
                 const sl = Number(row.stopLoss ?? 0);
                 const tgt = Number(row.targetPrice ?? 0);
                 const rr = e && sl && tgt ? `1:${(Math.abs(tgt - e) / Math.abs(e - sl)).toFixed(1)}` : "—";
+                const isBestRow = bestSignal ? row.symbol === bestSignal.symbol && normalizeSignal(row.signal) === normalizeSignal(bestSignal.signal) : false;
                 return (
-                  <div key={`m-${row.symbol}-${i}`} className={`p-3 ${act ? "" : "opacity-50"}`}>
+                  <div key={`m-${row.symbol}-${i}`} className={`p-3 ${act ? "" : "opacity-50"} ${isBestRow ? "ring-1 ring-emerald-400/30 bg-emerald-500/10" : ""}`}>
                     <div className="flex items-start justify-between gap-2 mb-1">
                       <div>
                         <div className="font-bold">{row.symbol}</div>
                         {row.name && <div className="text-[9px] text-[var(--bf-muted)]">{row.name}</div>}
+                        {isBestRow && <div className="mt-1 text-[10px] uppercase tracking-[0.18em] text-emerald-300 font-bold">Best signal</div>}
                       </div>
                       <Badge signal={row.signal} />
                     </div>
@@ -1206,7 +1292,7 @@ export default function DashboardClient() {
                       <ConfidenceBadge confidence={row.confidence} />
                       <span>R:R {rr}</span>
                       <span>{row.strength}%</span>
-                      <button onClick={() => setChartTarget({ symbol: row.symbol, name: row.name ?? row.symbol, entry: row.entryPrice, sl: row.stopLoss, target: row.targetPrice, signal: row.signal, currentPrice: row.currentPrice ?? row.entryPrice })} className="p-1 rounded bg-white/10 text-white/70">📊</button>
+                      <button onClick={() => setChartTarget({ symbol: row.symbol, name: row.name ?? row.symbol, entry: row.entryPrice, sl: row.stopLoss, target: row.targetPrice, signal: normalizeSignal(row.signal), currentPrice: row.currentPrice ?? row.entryPrice })} className="p-1 rounded bg-white/10 text-white/70">📊</button>
                     </div>
                   </div>
                 );
@@ -1241,7 +1327,7 @@ export default function DashboardClient() {
                   </div>
                   {a.results?.map((r, j) => {
                     const aSpot = Number(r.entryPrice ?? r.entry ?? 0);
-                    const dir = String(r.signal).toUpperCase();
+                    const dir = normalizeSignal(r.signal);
                     const isBuyAlert = dir === "BUY";
                     const isSellAlert = dir === "SELL";
                     const sym = r.symbol ?? "";
@@ -1465,8 +1551,8 @@ function ChartModal({ target, onClose }: { target: ChartTarget; onClose: () => v
   const [verdicts, setVerdicts] = useState<StrategyVerdict[]>([]);
   const [gann, setGann] = useState<GannFanSnapshot | null>(null);
 
-  const isBuy = String(target.signal).toUpperCase() === "BUY";
-  const isSell = String(target.signal).toUpperCase() === "SELL";
+  const isBuy = normalizeSignal(target.signal) === "BUY";
+  const isSell = normalizeSignal(target.signal) === "SELL";
 
   useEffect(() => {
     let mounted = true;
@@ -1543,6 +1629,7 @@ function ChartModal({ target, onClose }: { target: ChartTarget; onClose: () => v
           series.setData(cleaned.map((h) => ({ time: h.__t as number | string, value: Number(h.close) })));
         }
 
+        // Draw trading levels (entry, SL, targets)
         if (target.entry && target.entry > 0) {
           series.createPriceLine({
             price: target.entry, color: "#00ff99", lineWidth: 2, lineStyle: LineStyle.Dashed,
@@ -1552,20 +1639,64 @@ function ChartModal({ target, onClose }: { target: ChartTarget; onClose: () => v
         if (target.sl && target.sl > 0) {
           series.createPriceLine({
             price: target.sl, color: "#ff4d4f", lineWidth: 2, lineStyle: LineStyle.Dashed,
-            axisLabelVisible: true, title: `🛑 SL ₹${target.sl.toLocaleString("en-IN")}`,
+            axisLabelVisible: true, title: `🛑 STOP LOSS ₹${target.sl.toLocaleString("en-IN")}`,
           });
         }
         if (target.target && target.target > 0) {
           series.createPriceLine({
             price: target.target, color: "#66b3ff", lineWidth: 2, lineStyle: LineStyle.Dashed,
-            axisLabelVisible: true, title: `🎯 TGT ₹${target.target.toLocaleString("en-IN")}`,
+            axisLabelVisible: true, title: `🎯 TARGET ₹${target.target.toLocaleString("en-IN")}`,
           });
         }
         if (target.currentPrice && target.currentPrice > 0) {
           series.createPriceLine({
-            price: target.currentPrice, color: "#ffffff80", lineWidth: 1, lineStyle: LineStyle.Dotted,
-            axisLabelVisible: true, title: `CMP ₹${target.currentPrice.toLocaleString("en-IN")}`,
+            price: target.currentPrice, color: "#ffffff80", lineWidth: 1.5, lineStyle: LineStyle.Solid,
+            axisLabelVisible: true, title: `📊 CMP ₹${target.currentPrice.toLocaleString("en-IN")}`,
           });
+        }
+
+        // Calculate and draw support/resistance from historical data
+        if (cleaned.length > 20) {
+          const closes = cleaned.map((h: any) => Number(h.close)).slice(-50);
+          const highs = cleaned.map((h: any) => Number(h.high ?? h.close)).slice(-50);
+          const lows = cleaned.map((h: any) => Number(h.low ?? h.close)).slice(-50);
+          
+          // 20-period and 50-period moving averages
+          const ma20 = closes.length >= 20 ? closes.slice(-20).reduce((a, b) => a + b, 0) / 20 : 0;
+          const ma50 = closes.length >= 50 ? closes.slice(-50).reduce((a, b) => a + b, 0) / 50 : 0;
+          
+          if (ma20 > 0) {
+            series.createPriceLine({
+              price: ma20, color: "#fbbf24", lineWidth: 1, lineStyle: LineStyle.Solid,
+              axisLabelVisible: true, title: `MA(20) ₹${ma20.toLocaleString("en-IN", {maximumFractionDigits: 2})}`,
+            });
+          }
+          
+          if (ma50 > 0 && closes.length >= 50) {
+            series.createPriceLine({
+              price: ma50, color: "#60a5fa", lineWidth: 1, lineStyle: LineStyle.Solid,
+              axisLabelVisible: true, title: `MA(50) ₹${ma50.toLocaleString("en-IN", {maximumFractionDigits: 2})}`,
+            });
+          }
+          
+          // Support: recent swing low
+          // Resistance: recent swing high
+          const recentHigh = Math.max(...highs);
+          const recentLow = Math.min(...lows);
+          
+          if (recentHigh > 0 && recentHigh !== target.currentPrice) {
+            series.createPriceLine({
+              price: recentHigh, color: "#f87171", lineWidth: 1, lineStyle: LineStyle.Dotted,
+              axisLabelVisible: true, title: `RESISTANCE ₹${recentHigh.toLocaleString("en-IN", {maximumFractionDigits: 2})}`,
+            });
+          }
+          
+          if (recentLow > 0 && recentLow !== target.currentPrice) {
+            series.createPriceLine({
+              price: recentLow, color: "#34d399", lineWidth: 1, lineStyle: LineStyle.Dotted,
+              axisLabelVisible: true, title: `SUPPORT ₹${recentLow.toLocaleString("en-IN", {maximumFractionDigits: 2})}`,
+            });
+          }
         }
 
         // Strategy snapshot + Gann fan overlay (best-effort; failure is non-fatal)
@@ -1647,7 +1778,7 @@ function ChartModal({ target, onClose }: { target: ChartTarget; onClose: () => v
               <div className="font-extrabold text-lg text-white">{target.name}</div>
               <div className="text-[10px] text-white/50 font-mono">{target.symbol}</div>
             </div>
-            <span className={`px-3 py-1 rounded-full text-xs font-extrabold ${sigBg} ${isBuy || isSell ? "text-white" : "text-black"}`}>{String(target.signal).toUpperCase()}</span>
+            <span className={`px-3 py-1 rounded-full text-xs font-extrabold ${sigBg} ${isBuy || isSell ? "text-white" : "text-black"}`}>{normalizeSignal(target.signal)}</span>
           </div>
 
           <div className="flex items-center gap-4 text-xs font-mono">
@@ -1810,7 +1941,7 @@ function StrikePanel({ data, signal }: { data: StrikesData; signal: Signal }) {
   const list = strikes?.strikes ?? [];
   const atm = strikes?.atm ?? 0;
   const underlying = strikes?.price ?? Number(signal.currentPrice ?? signal.entryPrice ?? 0);
-  const sig = String(signal.signal).toUpperCase();
+  const sig = normalizeSignal(signal.signal);
   const isBull = sig === "BUY";
   const isBear = sig === "SELL";
 
@@ -1818,13 +1949,19 @@ function StrikePanel({ data, signal }: { data: StrikesData; signal: Signal }) {
   const sP = Number(signal.stopLoss ?? 0);
   const tP = Number(signal.targetPrice ?? 0);
 
+  const featureTags = getBestFeatures(signal.reason);
+  const exact = isExactPrediction(signal);
+
   return (
     <div className="space-y-2">
       {/* ── ACTION BANNER ── */}
       <div className={`flex items-center gap-3 p-3 rounded-lg ${isBull ? "bg-emerald-950/60 border border-emerald-700/40" : isBear ? "bg-rose-950/60 border border-rose-700/40" : "bg-amber-950/60 border border-amber-700/40"}`}>
         <div className="text-xl">{isBull ? "🟢" : isBear ? "🔴" : "🟡"}</div>
         <div className="flex-1 min-w-0">
-          <div className="font-bold text-sm">{sig} — {signal.symbol}</div>
+          <div className="flex flex-wrap items-center gap-2">
+            <div className="font-bold text-sm">{sig} — {signal.symbol}</div>
+            {exact && <span className="text-[10px] uppercase tracking-[0.24em] bg-emerald-500/10 text-emerald-300 border border-emerald-500/20 rounded-full px-2 py-0.5">EXACT PREDICTION</span>}
+          </div>
           <div className="text-[10px] text-[var(--bf-muted)]">
             {rec?.type === "HOLD"
               ? "No F&O action recommended"
@@ -1836,6 +1973,15 @@ function StrikePanel({ data, signal }: { data: StrikesData; signal: Signal }) {
           <div className="font-bold text-sm">₹{(underlying ?? 0).toFixed(2)}</div>
         </div>
       </div>
+
+      {featureTags.length > 0 && (
+        <div className="flex flex-wrap gap-2 px-3 py-2 rounded-lg bg-white/5 border border-white/10 text-[10px] text-white/80">
+          <span className="font-bold uppercase tracking-[0.18em] text-[11px]">Best features:</span>
+          {featureTags.map((tag) => (
+            <span key={tag} className="rounded-full bg-white/5 border border-white/10 px-2 py-1 text-[10px]">{tag}</span>
+          ))}
+        </div>
+      )}
 
       {/* ── QUICK SUMMARY: Entry / SL / Target / R:R ── */}
       <div className="grid grid-cols-4 gap-2 text-center">
@@ -2126,7 +2272,7 @@ function CommodityPredictions({ commodities, usdInr, mcxAnchors, onBuyTrade }: {
 
     const sig = cmdSignals[c.id];
     const hasSignal = !!sig;
-    const sigDir = String(sig?.signal ?? "HOLD").toUpperCase();
+    const sigDir = normalizeSignal(sig?.signal);
     const engineStrength = Number.isFinite(sig?.strength) ? (sig!.strength as number) : 0;
 
     // SEBI-grade gating: we only emit a tradable call when the engine is
@@ -2444,9 +2590,9 @@ function TomorrowOutlook({ indices, indexOptions, signals, onBuyTrade }: { indic
   const tomorrowStr = `${tomorrowDate.getDate()} ${MONTHS_SHORT[tomorrowDate.getMonth()]} ${tomorrowDate.getFullYear()}`;
 
   // Aggregate bull/bear counts from all signals
-  const actionableSignals = signals.filter(s => ["BUY", "SELL"].includes(String(s.signal).toUpperCase()) && s.strength >= 40);
-  const buyCount = actionableSignals.filter(s => String(s.signal).toUpperCase() === "BUY").length;
-  const sellCount = actionableSignals.filter(s => String(s.signal).toUpperCase() === "SELL").length;
+  const actionableSignals = signals.filter(s => ["BUY", "SELL"].includes(normalizeSignal(s.signal)) && s.strength >= 40);
+  const buyCount = actionableSignals.filter(s => normalizeSignal(s.signal) === "BUY").length;
+  const sellCount = actionableSignals.filter(s => normalizeSignal(s.signal) === "SELL").length;
   const domesticBias = buyCount > sellCount ? "BULLISH" : buyCount < sellCount ? "BEARISH" : "NEUTRAL";
 
   // Today's actual India index performance — THE most important input an
@@ -2490,7 +2636,7 @@ function TomorrowOutlook({ indices, indexOptions, signals, onBuyTrade }: { indic
     const sig = opt?.signal;
     const price = idx.price ?? 0;
     const change = idx.change ?? 0;
-    const liveDir = String(sig?.signal ?? "HOLD").toUpperCase();
+    const liveDir = normalizeSignal(sig?.signal);
     const liveStrength = sig?.strength ?? 0;
     const ens = ensemble[idx.id];
     // Fuse: 60% all-strategies ensemble + 40% live momentum signal (when both present).
@@ -2932,8 +3078,16 @@ function IndexOptionCard({ opt, onChartClick, onBuyTrade }: { opt: { sym: string
   const st = opt.strikes;
   const rec = st?.recommendation;
   const strikeList = st?.strikes?.strikes ?? [];
-  const atm = st?.strikes?.atm ?? 0;
-  const tick = st?.strikes?.tick ?? 50;
+  const rawAtm = st?.strikes?.atm;
+  const rawTick = st?.strikes?.tick;
+  const atm = typeof rawAtm === 'number' && Number.isFinite(rawAtm) && rawAtm > 0
+    ? rawAtm
+    : (strikeList.length ? strikeList[Math.floor(strikeList.length / 2)] : 0);
+  const tick = typeof rawTick === 'number' && Number.isFinite(rawTick) && rawTick > 0
+    ? rawTick
+    : 50;
+  const safeAtm = atm > 0 ? atm : 0;
+  const safeTick = tick > 0 ? tick : 50;
   const spotPrice = st?.strikes?.price ?? Number(sig?.entryPrice ?? 0);
   const sigDir = String(sig?.signal ?? rec?.type ?? "HOLD").toUpperCase();
   const isBull = sigDir === "BUY" || sigDir === "BUY_CALL" || rec?.type === "BUY_CALL";
@@ -2946,7 +3100,13 @@ function IndexOptionCard({ opt, onChartClick, onBuyTrade }: { opt: { sym: string
   const expiry = st?.strikes?.expiry ?? null;
   const liveIV = st?.strikes?.iv ?? null;
   const dte = st?.strikes?.daysToExpiry ?? null;
-  const recStrike = rec?.strike ?? (isBull ? atm + tick : isBear ? atm - tick : atm);
+  let recStrike = Number.isFinite(rec?.strike ?? NaN) ? (rec?.strike as number) : NaN;
+  if (!Number.isFinite(recStrike) || recStrike <= 0) {
+    if (isBull) recStrike = safeAtm + safeTick;
+    else if (isBear) recStrike = safeAtm - safeTick;
+    else recStrike = safeAtm;
+  }
+  if (!Number.isFinite(recStrike) || recStrike <= 0) recStrike = safeAtm;
 
   // Build a lookup for live strike data  
   const liveMap = new Map<number, LiveStrike>();
@@ -2972,7 +3132,7 @@ function IndexOptionCard({ opt, onChartClick, onBuyTrade }: { opt: { sym: string
   const recLive = liveMap.get(recStrike);
   const recLivePremium = recLive ? (isCall ? recLive.callLTP : recLive.putLTP) : null;
 
-  const mainCall = spotPrice > 0 && (isBull || isBear)
+  const mainCall = spotPrice > 0 && (isBull || isBear) && Number.isFinite(recStrike) && recStrike > 0
     ? formatTradeCall(spotPrice, recStrike, isCall, idxName, strength, recLivePremium, expiry)
     : null;
 

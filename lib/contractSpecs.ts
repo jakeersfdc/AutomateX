@@ -45,22 +45,29 @@ export function strikeStepFor(symbol: string, price: number): number {
 }
 
 /**
- * First listed OTM strike for the given direction:
+ * First listed OTM strike for the given direction with precision handling:
  *   • CE → ceil(spot/step)·step (next strike above spot)
  *   • PE → floor(spot/step)·step (next strike below spot)
- * If spot lands exactly on a strike, jump one further out for a true OTM.
+ * If spot lands exactly on a strike (within floating-point tolerance), jump one further out for a true OTM.
+ * Handles fractional strike steps (e.g., 2.5) with proper floating-point rounding.
  */
 export function nearestOtmStrike(spot: number, step: number, isCall: boolean): number {
   if (!(spot > 0) || !(step > 0)) return 0;
+  const epsilon = step * 1e-6; // floating-point tolerance
   const ratio = spot / step;
-  const k = isCall ? Math.ceil(ratio) * step : Math.floor(ratio) * step;
-  const adj = (k === spot) ? (isCall ? k + step : k - step) : k;
-  return Math.round(adj * 100) / 100;
+  let k = isCall ? Math.ceil(ratio - epsilon) * step : Math.floor(ratio + epsilon) * step;
+  const onStrike = Math.abs(k - spot) < epsilon;
+  if (onStrike) k = isCall ? k + step : k - step;
+  // Round to 2 decimals, handling fractional steps
+  return Math.round(k * 100) / 100;
 }
 
 export function atmStrike(spot: number, step: number): number {
   if (!(spot > 0) || !(step > 0)) return 0;
-  return Math.round(Math.round(spot / step) * step * 100) / 100;
+  const epsilon = step * 1e-6;
+  const rounded = Math.round((spot / step + epsilon) * 100) / 100;
+  const k = rounded * step;
+  return Math.round(k * 100) / 100;
 }
 
 /* ───────────────────── NSE Lot Sizes (current series) ───────────────────── */

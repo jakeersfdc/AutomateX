@@ -1,0 +1,313 @@
+//@version=6
+
+// NIFTY PRO TRADING SYSTEM v2.0
+// Market-Proven Indicators with R1, R2, S1, S2 Support/Resistance
+// Designed for Institutional Traders - Simplified & Effective
+
+indicator(
+    title="NIFTY Pro Trading System v2.0",
+    shorttitle="NPTS v2",
+    overlay=true
+)
+
+// ============================================================================
+// INPUT SETTINGS
+// ============================================================================
+
+group_pivot = "PIVOT SETTINGS"
+i_pivotType = input.string("Camarilla", "Pivot Type", options=["Standard", "Camarilla", "Fibonacci"], group=group_pivot)
+
+group_rsi = "RSI MOMENTUM"
+i_rsiLength = input.int(14, "RSI Length", minval=5, maxval=50, group=group_rsi)
+i_rsiOverbought = input.int(70, "Overbought Level", minval=50, maxval=90, group=group_rsi)
+i_rsiOversold = input.int(30, "Oversold Level", minval=10, maxval=50, group=group_rsi)
+
+group_macd = "MACD TREND"
+i_macdFast = input.int(12, "MACD Fast", minval=5, maxval=35, group=group_macd)
+i_macdSlow = input.int(26, "MACD Slow", minval=10, maxval=50, group=group_macd)
+i_macdSignal = input.int(9, "MACD Signal", minval=5, maxval=20, group=group_macd)
+
+group_vol = "VOLUME & ATR"
+i_volMA = input.int(20, "Volume MA Period", minval=5, maxval=50, group=group_vol)
+i_atrLength = input.int(14, "ATR Length", minval=5, maxval=30, group=group_vol)
+
+group_vix = "VIX FILTER"
+i_enableVixFilter = input.bool(true, "Enable VIX Filter", group=group_vix)
+i_vixHigh = input.float(25.0, "High VIX Threshold", minval=15.0, maxval=40.0, group=group_vix)
+
+group_display = "DISPLAY OPTIONS"
+i_showPivots = input.bool(true, "Show Pivot Levels", group=group_display)
+i_showRSI = input.bool(true, "Show RSI Signals", group=group_display)
+i_showMACD = input.bool(true, "Show MACD Signals", group=group_display)
+i_showVolume = input.bool(true, "Show Volume Filter", group=group_display)
+
+// ============================================================================
+// PIVOT CALCULATION FUNCTIONS
+// ============================================================================
+
+// Standard Pivot Points
+f_standardPivot() =>
+    float h = high[1]
+    float l = low[1]
+    float c = close[1]
+    float pivot = (h + l + c) / 3
+    float r1 = (pivot * 2) - l
+    float r2 = pivot + (h - l)
+    float s1 = (pivot * 2) - h
+    float s2 = pivot - (h - l)
+    [pivot, r1, r2, s1, s2]
+
+// Camarilla Pivot Points (More Sensitive)
+f_camarillaPivot() =>
+    float h = high[1]
+    float l = low[1]
+    float c = close[1]
+    float range = h - l
+    float pivot = c
+    float r1 = c + (range * 1.1 / 4)
+    float r2 = c + (range * 1.1 / 2)
+    float s1 = c - (range * 1.1 / 4)
+    float s2 = c - (range * 1.1 / 2)
+    [pivot, r1, r2, s1, s2]
+
+// Fibonacci Pivot Points
+f_fibPivot() =>
+    float h = high[1]
+    float l = low[1]
+    float c = close[1]
+    float pivot = (h + l + c) / 3
+    float range = h - l
+    float r1 = pivot + (range * 0.382)
+    float r2 = pivot + (range * 0.618)
+    float s1 = pivot - (range * 0.382)
+    float s2 = pivot - (range * 0.618)
+    [pivot, r1, r2, s1, s2]
+
+// ============================================================================
+// TECHNICAL INDICATORS
+// ============================================================================
+
+// RSI Calculation
+f_getRSI() =>
+    ta.rsi(close, i_rsiLength)
+
+// MACD Calculation
+f_getMACD() =>
+    [macdLine, signalLine, histLine] = ta.macd(close, i_macdFast, i_macdSlow, i_macdSignal)
+    [macdLine, signalLine, histLine]
+
+// Volume Analysis
+f_getVolumeStatus() =>
+    float avgVol = ta.sma(volume, i_volMA)
+    float currentVol = volume
+    
+    string volStatus = "Normal"
+    if currentVol > avgVol * 1.5
+        volStatus := "Strong"
+    else if currentVol < avgVol * 0.7
+        volStatus := "Weak"
+    
+    volStatus
+
+// ATR Calculation
+f_getATR() =>
+    ta.atr(i_atrLength)
+
+// VIX Status
+f_getVIXStatus() =>
+    float vixValue = request.security("NSE:INDIAVIX", "D", close)
+    bool highVix = vixValue > i_vixHigh
+    highVix
+
+// ============================================================================
+// SIGNAL GENERATION
+// ============================================================================
+
+// Get Pivot Levels
+[pivot, r1, r2, s1, s2] = 
+    if i_pivotType == "Camarilla"
+        f_camarillaPivot()
+    else if i_pivotType == "Fibonacci"
+        f_fibPivot()
+    else
+        f_standardPivot()
+
+// Calculate RSI
+float rsiValue = f_getRSI()
+
+// Calculate MACD
+[macdLine, signalLine, histLine] = f_getMACD()
+
+// Get Volume Status
+string volStatus = f_getVolumeStatus()
+
+// Get ATR
+float atrValue = f_getATR()
+
+// Get VIX Status
+bool isHighVix = f_getVIXStatus()
+
+// Determine if in No-Trade Zone
+bool inNoTradeZone = close > s1 and close < r1 and volStatus == "Weak"
+
+// ============================================================================
+// BUY SIGNAL CONDITIONS
+// ============================================================================
+
+bool buySignal = false
+
+// Condition 1: Price near S1 with momentum
+if close <= s1 + (atrValue * 0.2) and rsiValue < i_rsiOversold and macdLine > signalLine and volStatus == "Strong"
+    if not isHighVix or not i_enableVixFilter
+        buySignal := true
+
+// Condition 2: Price breaks above Pivot with uptrend
+if close > pivot and close[1] <= pivot and rsiValue > 40 and macdLine > signalLine and volStatus != "Weak"
+    if not isHighVix or not i_enableVixFilter
+        buySignal := true
+
+// Condition 3: Strong volume at S2 support
+if close >= s2 - atrValue and close <= s2 + atrValue and volStatus == "Strong" and rsiValue < 35 and histLine > 0
+    if not isHighVix or not i_enableVixFilter
+        buySignal := true
+
+// ============================================================================
+// SELL SIGNAL CONDITIONS
+// ============================================================================
+
+bool sellSignal = false
+
+// Condition 1: Price near R1 with momentum reversal
+if close >= r1 - (atrValue * 0.2) and rsiValue > i_rsiOverbought and macdLine < signalLine and volStatus == "Strong"
+    if not isHighVix or not i_enableVixFilter
+        sellSignal := true
+
+// Condition 2: Price breaks below Pivot with downtrend
+if close < pivot and close[1] >= pivot and rsiValue < 60 and macdLine < signalLine and volStatus != "Weak"
+    if not isHighVix or not i_enableVixFilter
+        sellSignal := true
+
+// Condition 3: Strong volume at R2 resistance
+if close <= r2 + atrValue and close >= r2 - atrValue and volStatus == "Strong" and rsiValue > 65 and histLine < 0
+    if not isHighVix or not i_enableVixFilter
+        sellSignal := true
+
+// ============================================================================
+// EXIT SIGNALS
+// ============================================================================
+
+bool exitBuySignal = rsiValue > i_rsiOverbought and macdLine < signalLine
+bool exitSellSignal = rsiValue < i_rsiOversold and macdLine > signalLine
+
+// ============================================================================
+// PLOTTING - PIVOT LEVELS
+// ============================================================================
+
+if i_showPivots
+    // Resistance Levels
+    hline(r2, "R2", color=color.new(color.red, 50), linestyle=hline.style_dashed, linewidth=2)
+    hline(r1, "R1", color=color.new(color.orange, 50), linestyle=hline.style_dashed, linewidth=2)
+    
+    // Pivot
+    hline(pivot, "Pivot", color=color.new(color.blue, 40), linestyle=hline.style_solid, linewidth=2)
+    
+    // Support Levels
+    hline(s1, "S1", color=color.new(color.teal, 50), linestyle=hline.style_dashed, linewidth=2)
+    hline(s2, "S2", color=color.new(color.green, 50), linestyle=hline.style_dashed, linewidth=2)
+
+// ============================================================================
+// PLOTTING - SIGNALS
+// ============================================================================
+
+// Buy Signals
+if buySignal
+    plotshape(buySignal, title="BUY Signal", location=location.belowbar, shape=shape.labelup, 
+              color=color.new(color.green, 0), textcolor=color.white, size=size.small, text="BUY")
+    alert("🟢 NIFTY BUY SIGNAL @ " + str.tostring(close, "0.00"), alert.freq_once_per_bar_close)
+
+// Sell Signals
+if sellSignal
+    plotshape(sellSignal, title="SELL Signal", location=location.abovebar, shape=shape.labeldown, 
+              color=color.new(color.red, 0), textcolor=color.white, size=size.small, text="SELL")
+    alert("🔴 NIFTY SELL SIGNAL @ " + str.tostring(close, "0.00"), alert.freq_once_per_bar_close)
+
+// Exit Buy Signals
+if exitBuySignal and barstate.isclose
+    plotshape(exitBuySignal, title="EXIT BUY", location=location.abovebar, shape=shape.xcross, 
+              color=color.new(color.orange, 50), size=size.small)
+
+// Exit Sell Signals
+if exitSellSignal and barstate.isclose
+    plotshape(exitSellSignal, title="EXIT SELL", location=location.belowbar, shape=shape.xcross, 
+              color=color.new(color.orange, 50), size=size.small)
+
+// ============================================================================
+// PLOTTING - NO TRADE ZONE
+// ============================================================================
+
+if inNoTradeZone
+    bgcolor(color.new(color.yellow, 90))
+
+// ============================================================================
+// RSI INDICATOR (SUBPLOT)
+// ============================================================================
+
+if i_showRSI
+    plot(rsiValue, "RSI", color=color.new(color.purple, 0), linewidth=2)
+    hline(i_rsiOverbought, "RSI Overbought", color=color.new(color.red, 50), linestyle=hline.style_dotted)
+    hline(i_rsiOversold, "RSI Oversold", color=color.new(color.green, 50), linestyle=hline.style_dotted)
+    hline(50, "RSI Mid", color=color.new(color.gray, 50), linestyle=hline.style_dotted)
+
+// ============================================================================
+// MACD INDICATOR (SUBPLOT)
+// ============================================================================
+
+if i_showMACD
+    plot(macdLine, "MACD", color=color.new(color.blue, 0), linewidth=1)
+    plot(signalLine, "MACD Signal", color=color.new(color.red, 0), linewidth=1)
+    plot(histLine, "MACD Histogram", color=histLine > 0 ? color.new(color.green, 60) : color.new(color.red, 60), style=plot.style_columns)
+
+// ============================================================================
+// VOLUME INDICATOR (SUBPLOT)
+// ============================================================================
+
+if i_showVolume
+    barcolor(volStatus == "Strong" ? color.new(color.green, 60) : (volStatus == "Weak" ? color.new(color.red, 60) : na))
+
+// ============================================================================
+// INFO TABLE
+// ============================================================================
+
+var table infoTable = table.new(position.top_right, 2, 8, border_color=color.new(color.gray, 50), border_width=2)
+
+// Update table
+table.cell(infoTable, 0, 0, "Trading System", text_color=color.white, bgcolor=color.new(color.blue, 0), text_size=size.small)
+table.cell(infoTable, 1, 0, "NPTS v2", text_color=color.white, bgcolor=color.new(color.blue, 0), text_size=size.small)
+
+table.cell(infoTable, 0, 1, "R2", text_color=color.white, bgcolor=color.new(color.gray, 40), text_size=size.small)
+table.cell(infoTable, 1, 1, str.tostring(r2, "0.00"), text_color=color.red, text_size=size.small)
+
+table.cell(infoTable, 0, 2, "R1", text_color=color.white, bgcolor=color.new(color.gray, 40), text_size=size.small)
+table.cell(infoTable, 1, 2, str.tostring(r1, "0.00"), text_color=color.orange, text_size=size.small)
+
+table.cell(infoTable, 0, 3, "Pivot", text_color=color.white, bgcolor=color.new(color.gray, 40), text_size=size.small)
+table.cell(infoTable, 1, 3, str.tostring(pivot, "0.00"), text_color=color.blue, text_size=size.small)
+
+table.cell(infoTable, 0, 4, "S1", text_color=color.white, bgcolor=color.new(color.gray, 40), text_size=size.small)
+table.cell(infoTable, 1, 4, str.tostring(s1, "0.00"), text_color=color.teal, text_size=size.small)
+
+table.cell(infoTable, 0, 5, "S2", text_color=color.white, bgcolor=color.new(color.gray, 40), text_size=size.small)
+table.cell(infoTable, 1, 5, str.tostring(s2, "0.00"), text_color=color.green, text_size=size.small)
+
+table.cell(infoTable, 0, 6, "Signal", text_color=color.white, bgcolor=color.new(color.gray, 40), text_size=size.small)
+statusText = buySignal ? "BUY" : (sellSignal ? "SELL" : (inNoTradeZone ? "NO TRADE" : "NEUTRAL"))
+statusColor = buySignal ? color.green : (sellSignal ? color.red : (inNoTradeZone ? color.yellow : color.gray))
+table.cell(infoTable, 1, 6, statusText, text_color=statusColor, text_size=size.small, text_halign=text.align_center)
+
+table.cell(infoTable, 0, 7, "Volume", text_color=color.white, bgcolor=color.new(color.gray, 40), text_size=size.small)
+volColor = volStatus == "Strong" ? color.green : (volStatus == "Weak" ? color.red : color.yellow)
+table.cell(infoTable, 1, 7, volStatus, text_color=volColor, text_size=size.small, text_halign=text.align_center)
+
+// ============================================================================
+// END OF INDICATOR
+// ============================================================================

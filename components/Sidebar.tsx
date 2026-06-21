@@ -55,6 +55,7 @@ const navGroups: NavGroup[] = [
     items: [
       { name: "OMS", href: "/dashboard/oms", icon: Activity },
       { name: "Strategy Lab", href: "/dashboard/strategy", icon: FlaskConical },
+      { name: "v2.1 Signals", href: "/signals", icon: Zap },
       { name: "Watchlist", href: "/dashboard?view=stocks#watchlist", icon: Star },
       { name: "Brokers", href: "/dashboard?view=brokers", icon: Link2 },
       { name: "Profile", href: "/profile", icon: User },
@@ -158,13 +159,12 @@ export default function Sidebar() {
     <>
       {/* ───────── Mobile fixed top bar ───────── */}
       <header
-        className="md:hidden fixed top-0 inset-x-0 z-40 flex items-center justify-between px-3 border-b border-white/5"
+        className="md:hidden fixed top-0 inset-x-0 z-40 flex items-center justify-between px-4 border-b border-white/10 bg-slate-950/95 shadow-[0_12px_32px_rgba(0,0,0,0.4)]"
         style={{
-          background: "rgba(7,16,38,0.85)",
-          backdropFilter: "saturate(160%) blur(12px)",
-          WebkitBackdropFilter: "saturate(160%) blur(12px)",
+          backdropFilter: "saturate(160%) blur(18px)",
+          WebkitBackdropFilter: "saturate(160%) blur(18px)",
           paddingTop: "env(safe-area-inset-top)",
-          height: "calc(3.5rem + env(safe-area-inset-top))",
+          height: "calc(3.75rem + env(safe-area-inset-top))",
         }}
       >
         <Link href="/" className="flex items-center gap-2">
@@ -285,7 +285,7 @@ export default function Sidebar() {
       />
       {/* Drawer */}
       <aside
-        className={`md:hidden fixed left-0 top-0 bottom-0 z-50 w-[78%] max-w-[300px] flex flex-col bf-sidebar bf-shadow border-r border-white/10 transition-transform duration-300 ease-out will-change-transform ${
+        className={`md:hidden fixed left-0 top-0 bottom-0 z-50 w-[78%] max-w-[300px] flex flex-col bf-sidebar bf-shadow border-r border-white/10 transition-transform duration-300 ease-out will-change-transform rounded-r-3xl ${
           open ? "translate-x-0" : "-translate-x-full"
         }`}
         style={{
@@ -311,7 +311,7 @@ export default function Sidebar() {
           <ul className="space-y-3">
             {navGroups.map((group) => (
               <li key={group.label}>
-                <div className="px-3 mb-1 text-[10px] font-bold uppercase tracking-wider text-white/40">
+                <div className="px-3 mb-2 text-[10px] font-semibold uppercase tracking-[0.24em] text-cyan-300/70">
                   {group.label}
                 </div>
                 <ul className="space-y-1">

@@ -33,14 +33,26 @@ export async function GET(req: Request) {
         }
       }
     }
-    const args = [script, '--symbol', symbol!, '--model', modelPathResolved];
+    const interval = url.searchParams.get('interval') || '1d';
+    const horizons = url.searchParams.get('horizons');
+    const provider = url.searchParams.get('provider');
+    const args = [script, '--symbol', symbol!, '--model', modelPathResolved, '--interval', interval];
+    if (horizons) {
+      args.push('--horizons', horizons);
+    }
+    if (provider) {
+      args.push('--provider', provider);
+    }
     // If INFERENCE_URL is configured, proxy the request to the inference service (production)
     const inferenceUrl = process.env.INFERENCE_URL;
     if (inferenceUrl) {
       try {
         const headers: any = {};
         if (process.env.INFERENCE_SERVICE_TOKEN) headers['Authorization'] = `Bearer ${process.env.INFERENCE_SERVICE_TOKEN}`;
-        const proxied = await fetch(`${inferenceUrl}/predict?symbol=${encodeURIComponent(symbol || '')}`, { headers });
+        const queryParams = `symbol=${encodeURIComponent(symbol || '')}&interval=${encodeURIComponent(interval)}` +
+          (horizons ? `&horizons=${encodeURIComponent(horizons)}` : '') +
+          (provider ? `&provider=${encodeURIComponent(provider)}` : '');
+        const proxied = await fetch(`${inferenceUrl}/predict?${queryParams}`, { headers });
         const j = await proxied.json();
         return NextResponse.json(j);
       } catch (e) {

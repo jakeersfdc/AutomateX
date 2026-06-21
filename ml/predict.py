@@ -8,11 +8,15 @@ Usage: python ml/predict.py --symbol RELIANCE.NS --model ml/models/RELIANCE.NS.j
 """
 import argparse
 import json
+import os
+import urllib.parse
+import urllib.request
 import warnings
 import joblib
 import numpy as np
 import yfinance as yf
 import pandas as pd
+from typing import Any, Dict, Optional
 from ta.momentum import RSIIndicator, StochasticOscillator, WilliamsRIndicator
 from ta.trend import MACD, ADXIndicator, CCIIndicator, EMAIndicator
 from ta.volatility import BollingerBands, AverageTrueRange
@@ -116,15 +120,208 @@ def compute_features_v1(df: pd.DataFrame) -> pd.DataFrame:
     return df
 
 
+def _normalize_interval(interval: str) -> str:
+    interval = interval.lower().strip()
+    if interval == '1h':
+        return '60m'
+    if interval == '1d':
+        return '1d'
+    return interval
+
+
+def _default_intraday_period(interval: str) -> str:
+    interval = interval.lower().strip()
+    if interval in ['1m', '2m', '5m']:
+        return '30d'
+    if interval in ['15m', '30m']:
+        return '60d'
+    if interval in ['60m', '1h']:
+        return '730d'
+    return '730d'
+
+
+def _load_from_polygon(symbol: str, interval: str, start: Optional[str], end: Optional[str]) -> pd.DataFrame:
+    api_key = os.environ.get('POLYGON_API_KEY')
+    if not api_key:
+        raise RuntimeError('POLYGON_API_KEY must be set to use provider=polygon')
+
+    interval = interval.lower().strip()
+    if interval == '1h':
+        interval = '60m'
+    if interval not in ['1m', '2m', '5m', '15m', '30m', '60m']:
+        raise RuntimeError(f'Unsupported polygon interval: {interval}')
+
+    if not start or not end:
+        raise RuntimeError('start and end dates are required for polygon provider')
+
+    from datetime import datetime
+    encoded_symbol = urllib.parse.quote(symbol, safe='')
+    from_date = datetime.fromisoformat(start).strftime('%Y-%m-%d')
+    to_date = datetime.fromisoformat(end).strftime('%Y-%m-%d')
+    url = (
+        f'https://api.polygon.io/v2/aggs/ticker/{encoded_symbol}/range/1/{interval}/{from_date}/{to_date}'
+        f'?adjusted=true&sort=asc&limit=50000&apiKey={urllib.parse.quote(api_key)}'
+    )
+    with urllib.request.urlopen(url) as resp:
+        payload = json.loads(resp.read().decode('utf-8'))
+    if not payload.get('results'):
+        raise RuntimeError('Polygon returned no data for symbol ' + symbol)
+    rows = [
+        {
+            'date': datetime.utcfromtimestamp(item['t'] / 1000),
+            'open': item['o'],
+            'high': item['h'],
+            'low': item['l'],
+            'close': item['c'],
+            'volume': item['v'],
+        }
+        for item in payload['results']
+    ]
+    df = pd.DataFrame(rows).set_index('date')
+    return df
+
+
+def load_ohlcv(symbol: str, interval: str = '1d', period: Optional[str] = None, csv_path: Optional[str] = None, provider: Optional[str] = None, start: Optional[str] = None, end: Optional[str] = None) -> pd.DataFrame:
+    if csv_path:
+        if not os.path.exists(csv_path):
+            raise RuntimeError(f'CSV path not found: {csv_path}')
+        df = pd.read_csv(csv_path, parse_dates=True, index_col=0)
+        if df.empty:
+            raise RuntimeError('CSV data is empty')
+        return df
+
+    interval = _normalize_interval(interval)
+    if period is None:
+        period = _default_intraday_period(interval)
+
+    if provider == 'polygon':
+        return _load_from_polygon(symbol, interval, start, end)
+
+    df = yf.download(symbol, period=period, interval=interval, progress=False)
+
+    if df is None or df.shape[0] < 60:
+        raise RuntimeError('insufficient data')
+    return df
+
+
+def load_model_bundle(path: str) -> Dict[str, Any]:
+    bundle = joblib.load(path)
+    if isinstance(bundle, dict):
+        return bundle
+    return {
+        'model': bundle,
+        'version': '1.0',
+        'columns': FEATURE_COLS_V1,
+        'interval': '1d',
+        'horizons': [1],
+    }
+
+
+def predict_from_bundle(bundle: Dict[str, Any], symbol: str, interval: str = '1d', period: Optional[str] = None, provider: Optional[str] = None, csv_path: Optional[str] = None) -> Dict[str, Any]:
+    interval = _normalize_interval(interval)
+    provider = provider or bundle.get('provider')
+    df = load_ohlcv(symbol, interval=interval, period=period, provider=provider, csv_path=csv_path)
+
+    version = bundle.get('version', '1.0')
+    scaler = bundle.get('scaler')
+    columns = bundle.get('columns')
+    is_v2 = version >= '2.0' or (columns is not None and len(columns) > 10)
+
+    if is_v2:
+        feats = compute_features_v2(df)
+        feature_cols = FEATURE_COLS_V2
+    else:
+        feats = compute_features_v1(df)
+        feature_cols = FEATURE_COLS_V1
+
+    if feats.empty:
+        return {'error': 'no features generated'}
+
+    last = feats.iloc[-1:]
+    X = last[feature_cols]
+    if scaler is not None:
+        X = pd.DataFrame(scaler.transform(X), columns=X.columns, index=X.index)
+
+    models = bundle.get('models')
+    predictions = []
+    if models:
+        for horizon_key, estimator_bundle in models.items():
+            estimator = estimator_bundle.get('model') if isinstance(estimator_bundle, dict) and 'model' in estimator_bundle else estimator_bundle
+            prob_buy = None
+            try:
+                probs = estimator.predict_proba(X)[0]
+                prob_buy = float(probs[1]) if len(probs) > 1 else float(probs[0])
+            except Exception:
+                pred = int(estimator.predict(X)[0])
+                prob_buy = 1.0 if pred == 1 else 0.0
+            last_close = float(last['close'].values[0])
+            atr_val = float(last['atr14'].values[0]) if 'atr14' in last.columns else None
+            action, entry, stop, target, confidence = recommend_from_prob(prob_buy, last_close, atr_val)
+            strength = min(100, int(abs(prob_buy - 0.5) * 200))
+            predictions.append({
+                'horizon': int(horizon_key),
+                'prob_buy': round(prob_buy, 4),
+                'action': action,
+                'entry': entry,
+                'stop': stop,
+                'target': target,
+                'confidence': round(confidence, 4),
+                'strength': strength,
+            })
+
+        best_prediction = sorted(predictions, key=lambda p: abs(p['prob_buy'] - 0.5), reverse=True)[0]
+        return {
+            'symbol': symbol,
+            'interval': interval,
+            'provider': provider,
+            'horizons': bundle.get('horizons', list(models.keys())),
+            'predictions': predictions,
+            'action': best_prediction['action'],
+            'entry': best_prediction['entry'],
+            'stop': best_prediction['stop'],
+            'target': best_prediction['target'],
+            'confidence': best_prediction['confidence'],
+            'prob_buy': best_prediction['prob_buy'],
+            'strength': best_prediction['strength'],
+            'model_version': version,
+        }
+
+    model_obj = bundle.get('model') if isinstance(bundle, dict) else bundle
+    try:
+        probs = model_obj.predict_proba(X)[0]
+        prob_buy = float(probs[1]) if len(probs) > 1 else float(probs[0])
+    except Exception:
+        pred = int(model_obj.predict(X)[0])
+        prob_buy = 1.0 if pred == 1 else 0.0
+
+    last_close = float(last['close'].values[0])
+    atr_val = float(last['atr14'].values[0]) if 'atr14' in last.columns else None
+    action, entry, stop, target, confidence = recommend_from_prob(prob_buy, last_close, atr_val)
+    strength = min(100, int(abs(prob_buy - 0.5) * 200))
+
+    return {
+        'symbol': symbol,
+        'interval': interval,
+        'provider': provider,
+        'action': action,
+        'entry': entry,
+        'stop': stop,
+        'target': target,
+        'confidence': round(confidence, 4),
+        'prob_buy': round(prob_buy, 4),
+        'strength': strength,
+        'model_version': version,
+    }
+
+
 def recommend_from_prob(prob, last_close, atr=None):
     """Generate entry/stop/target based on probability and ATR-based risk."""
-    # Use ATR for dynamic stop/target if available
     atr_val = atr if atr and atr > 0 else last_close * 0.015
 
     if prob >= 0.6:
         entry = last_close
         stop = round(last_close - 1.5 * atr_val, 2)
-        target = round(last_close + 3.0 * atr_val, 2)  # 2:1 risk-reward
+        target = round(last_close + 3.0 * atr_val, 2)
         confidence = prob
         return 'BUY', entry, stop, target, confidence
     elif prob <= 0.4:
@@ -141,70 +338,26 @@ def main():
     p = argparse.ArgumentParser()
     p.add_argument('--symbol', required=True)
     p.add_argument('--model', required=True)
-    p.add_argument('--period', default='365d')
+    p.add_argument('--interval', default='1d')
+    p.add_argument('--period', default=None)
+    p.add_argument('--provider', default=None, help='Optional data provider for OHLCV: polygon')
+    p.add_argument('--csv', default=None)
     args = p.parse_args()
 
-    df = yf.download(args.symbol, period=args.period, progress=False)
-    if df is None or df.shape[0] < 60:
-        print(json.dumps({'error': 'insufficient data'}))
-        return
-
-    # Load model bundle
-    bundle = joblib.load(args.model)
-    model_obj = bundle.get('model') if isinstance(bundle, dict) else bundle
-    version = bundle.get('version', '1.0') if isinstance(bundle, dict) else '1.0'
-    scaler = bundle.get('scaler') if isinstance(bundle, dict) else None
-    columns = bundle.get('columns') if isinstance(bundle, dict) else FEATURE_COLS_V1
-
-    # Determine feature version
-    is_v2 = version >= '2.0' or len(columns) > 10
-
-    if is_v2:
-        feats = compute_features_v2(df)
-        feature_cols = FEATURE_COLS_V2
-    else:
-        feats = compute_features_v1(df)
-        feature_cols = FEATURE_COLS_V1
-
-    if feats.empty:
-        print(json.dumps({'error': 'no features'}))
-        return
-
-    last = feats.iloc[-1:]
-    X = last[feature_cols]
-
-    # Apply scaler if present
-    if scaler is not None:
-        X = pd.DataFrame(scaler.transform(X), columns=X.columns, index=X.index)
-
-    # Predict
-    probs = None
     try:
-        probs = model_obj.predict_proba(X)[0]
-        prob_buy = float(probs[1]) if len(probs) > 1 else float(probs[0])
-    except Exception:
-        pred = int(model_obj.predict(X)[0])
-        prob_buy = 1.0 if pred == 1 else 0.0
+        bundle = load_model_bundle(args.model)
+        output = predict_from_bundle(
+            bundle,
+            args.symbol,
+            interval=args.interval,
+            period=args.period,
+            provider=args.provider,
+            csv_path=args.csv,
+        )
+    except Exception as exc:
+        output = {'error': str(exc)}
 
-    last_close = float(last['close'].values[0])
-    atr_val = float(last['atr14'].values[0]) if 'atr14' in last.columns else None
-    action, entry, stop, target, confidence = recommend_from_prob(prob_buy, last_close, atr_val)
-
-    # Compute signal strength (0-100)
-    strength = min(100, int(abs(prob_buy - 0.5) * 200))
-
-    out = {
-        'symbol': args.symbol,
-        'action': action,
-        'entry': entry,
-        'stop': stop,
-        'target': target,
-        'confidence': round(confidence, 4),
-        'prob_buy': round(prob_buy, 4),
-        'strength': strength,
-        'model_version': version,
-    }
-    print(json.dumps(out))
+    print(json.dumps(output))
 
 
 if __name__ == '__main__':

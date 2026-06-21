@@ -11,7 +11,10 @@
     "vercel-build": "node scripts/run_migrations.js && next build",
     "postinstall": "node -e \"console.log('postinstall ok')\"",
     "start": "next start",
-    "lint": "eslint"
+    "lint": "eslint",
+    "test:unit": "node --test tests/sr-break.test.js",
+    "deploy": "npm run build && npx vercel deploy --prod --yes",
+    "deploy:staging": "npm run build && npx vercel deploy --yes"
   },
   "dependencies": {
     "@clerk/nextjs": "^7.0.8",
