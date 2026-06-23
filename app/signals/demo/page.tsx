@@ -1,5 +1,5 @@
 /**
- * SAS Trading System v2.0 - Premium Trading Dashboard
+ * ProfitForce Trading Dashboard v2.0 - Premium Trading Platform
  * Institutional-grade UI with real-time signals
  * Supports: Equities, Crypto, Forex, Commodities
  */
@@ -30,7 +30,7 @@ interface DemoTab {
   icon: string;
 }
 
-export default function SASDemo() {
+export default function ProfitForceDemo() {
   const [activeTab, setActiveTab] = useState<'equities' | 'crypto' | 'forex' | 'commodities'>('equities');
   const [expandedCard, setExpandedCard] = useState<string | null>(null);
   const [isLive, setIsLive] = useState(true);
@@ -48,13 +48,13 @@ export default function SASDemo() {
       symbol: 'NIFTY50',
       signal: 'BUY',
       confidence: 87,
-      price: 24890.45,
-      change: 1.24,
-      entry: 24850,
-      stopLoss: 24500,
-      target1: 25200,
-      target2: 25550,
-      target3: 25900,
+      price: 25345.20,
+      change: 2.15,
+      entry: 25200,
+      stopLoss: 24800,
+      target1: 25800,
+      target2: 26300,
+      target3: 26800,
       lastUpdate: '2026-06-23 14:30 IST',
       factors: ['Strong Support at PP', 'ADX 28+', 'Volume Surge', 'Bullish Setup', 'RSI 65']
     },
@@ -63,13 +63,13 @@ export default function SASDemo() {
       symbol: 'BANKNIFTY',
       signal: 'SELL',
       confidence: 82,
-      price: 50850.30,
-      change: -1.85,
-      entry: 50950,
-      stopLoss: 51350,
-      target1: 50450,
-      target2: 50050,
-      target3: 49650,
+      price: 51950.50,
+      change: -2.35,
+      entry: 52200,
+      stopLoss: 52700,
+      target1: 51500,
+      target2: 51000,
+      target3: 50400,
       lastUpdate: '2026-06-23 14:25 IST',
       factors: ['Resistance R1', 'Divergence', 'Lower Volumes', 'Bearish Pattern', 'VIX Rising']
     },
@@ -78,13 +78,13 @@ export default function SASDemo() {
       symbol: 'FINNIFTY',
       signal: 'HOLD',
       confidence: 58,
-      price: 23450.75,
-      change: 0.42,
-      entry: 23400,
-      stopLoss: 23100,
-      target1: 23700,
-      target2: 23950,
-      target3: 24200,
+      price: 24125.80,
+      change: 0.85,
+      entry: 24000,
+      stopLoss: 23650,
+      target1: 24400,
+      target2: 24700,
+      target3: 25000,
       lastUpdate: '2026-06-23 14:20 IST',
       factors: ['Consolidation', 'Neutral ADX', 'Mixed Signals', 'Range Bound', 'Watch']
     },
@@ -93,13 +93,13 @@ export default function SASDemo() {
       symbol: 'SENSEX',
       signal: 'BUY',
       confidence: 79,
-      price: 82450.20,
-      change: 0.89,
-      entry: 82350,
-      stopLoss: 81950,
-      target1: 83100,
-      target2: 83600,
-      target3: 84100,
+      price: 85340.50,
+      change: 1.65,
+      entry: 85100,
+      stopLoss: 84500,
+      target1: 86200,
+      target2: 87100,
+      target3: 88000,
       lastUpdate: '2026-06-23 14:15 IST',
       factors: ['Uptrend Active', 'Support Holding', 'Volume Positive', 'MA Aligned', 'Bullish']
     }
@@ -111,28 +111,28 @@ export default function SASDemo() {
       symbol: 'BTC/USD',
       signal: 'BUY',
       confidence: 91,
-      price: 63450.50,
-      change: 2.15,
-      entry: 63200,
-      stopLoss: 62400,
-      target1: 64200,
-      target2: 65100,
-      target3: 66200,
+      price: 67850.00,
+      change: 3.45,
+      entry: 67500,
+      stopLoss: 66200,
+      target1: 69200,
+      target2: 71000,
+      target3: 73500,
       lastUpdate: '2026-06-23 14:35 UTC',
-      factors: ['Breakout Above 63K', 'Strong Volume', 'Higher Lows', 'Buying Pressure', 'Dominance ↑']
+      factors: ['Breakout Above 67K', 'Strong Volume', 'Higher Lows', 'Buying Pressure', 'Dominance ↑']
     },
     {
       id: '6',
       symbol: 'ETH/USD',
       signal: 'SELL',
       confidence: 76,
-      price: 3580.25,
-      change: -1.32,
-      entry: 3620,
-      stopLoss: 3750,
-      target1: 3450,
-      target2: 3320,
-      target3: 3180,
+      price: 3850.75,
+      change: -1.85,
+      entry: 3920,
+      stopLoss: 4050,
+      target1: 3700,
+      target2: 3550,
+      target3: 3400,
       lastUpdate: '2026-06-23 14:30 UTC',
       factors: ['Resistance R1', 'Rejection', 'Lower Highs', 'Weak RSI', 'Profit Taking']
     },
@@ -141,13 +141,13 @@ export default function SASDemo() {
       symbol: 'SOL/USD',
       signal: 'BUY',
       confidence: 84,
-      price: 142.80,
-      change: 3.42,
-      entry: 141.50,
-      stopLoss: 138.20,
-      target1: 148.50,
-      target2: 155.20,
-      target3: 162.50,
+      price: 168.50,
+      change: 4.25,
+      entry: 165.80,
+      stopLoss: 160.20,
+      target1: 175.50,
+      target2: 183.20,
+      target3: 192.00,
       lastUpdate: '2026-06-23 14:32 UTC',
       factors: ['Breakout Pattern', 'High Volume', 'Bullish MACD', 'Positive Sentiment', 'Momentum']
     },
@@ -156,13 +156,13 @@ export default function SASDemo() {
       symbol: 'XRP/USD',
       signal: 'HOLD',
       confidence: 62,
-      price: 2.45,
-      change: 0.78,
-      entry: 2.42,
-      stopLoss: 2.35,
-      target1: 2.65,
-      target2: 2.85,
-      target3: 3.10,
+      price: 3.15,
+      change: 1.25,
+      entry: 3.10,
+      stopLoss: 2.95,
+      target1: 3.45,
+      target2: 3.75,
+      target3: 4.10,
       lastUpdate: '2026-06-23 14:28 UTC',
       factors: ['Neutral', 'Consolidating', 'Awaiting News', 'Mixed Tech', 'Watch']
     }
@@ -174,12 +174,12 @@ export default function SASDemo() {
       symbol: 'EUR/USD',
       signal: 'SELL',
       confidence: 73,
-      price: 1.0845,
-      change: -0.42,
-      entry: 1.0880,
-      stopLoss: 1.1050,
-      target1: 1.0750,
-      target2: 1.0680,
+      price: 1.0920,
+      change: -0.65,
+      entry: 1.1000,
+      stopLoss: 1.1150,
+      target1: 1.0800,
+      target2: 1.0700,
       target3: 1.0620,
       lastUpdate: '2026-06-23 14:31 UTC',
       factors: ['Bearish Rejection', 'Dollar Strong', 'Fed Hawkish', 'Resistance', 'Downtrend']
@@ -189,13 +189,13 @@ export default function SASDemo() {
       symbol: 'GBP/USD',
       signal: 'BUY',
       confidence: 78,
-      price: 1.2750,
-      change: 1.15,
-      entry: 1.2680,
-      stopLoss: 1.2580,
-      target1: 1.2850,
-      target2: 1.2950,
-      target3: 1.3050,
+      price: 1.3050,
+      change: 1.85,
+      entry: 1.2950,
+      stopLoss: 1.2820,
+      target1: 1.3200,
+      target2: 1.3350,
+      target3: 1.3500,
       lastUpdate: '2026-06-23 14:29 UTC',
       factors: ['Bullish Breakout', 'BOE Positive', 'Strong Setup', 'Uptrend', 'Volume']
     }
@@ -207,13 +207,13 @@ export default function SASDemo() {
       symbol: 'GOLD/USD',
       signal: 'HOLD',
       confidence: 65,
-      price: 2385.50,
-      change: 0.25,
-      entry: 2380,
-      stopLoss: 2350,
-      target1: 2420,
-      target2: 2450,
-      target3: 2480,
+      price: 2525.75,
+      change: 0.85,
+      entry: 2510,
+      stopLoss: 2480,
+      target1: 2560,
+      target2: 2600,
+      target3: 2640,
       lastUpdate: '2026-06-23 14:27 UTC',
       factors: ['Neutral Zone', 'Mixed Signals', 'Data Pending', 'Range Bound', 'Watch']
     },
@@ -222,13 +222,13 @@ export default function SASDemo() {
       symbol: 'CRUDE OIL',
       signal: 'BUY',
       confidence: 80,
-      price: 82.45,
-      change: 2.18,
-      entry: 81.50,
-      stopLoss: 79.80,
-      target1: 85.20,
-      target2: 87.50,
-      target3: 90.00,
+      price: 89.75,
+      change: 3.25,
+      entry: 88.50,
+      stopLoss: 85.80,
+      target1: 93.50,
+      target2: 96.80,
+      target3: 100.00,
       lastUpdate: '2026-06-23 14:26 UTC',
       factors: ['OPEC+ Cut', 'Demand ↑', 'Supply Concern', 'Technical Break', 'Bullish']
     }
@@ -436,13 +436,13 @@ export default function SASDemo() {
             <div className="flex items-center gap-4">
               <div className="relative">
                 <div className="text-6xl font-black bg-gradient-to-r from-blue-400 via-purple-400 to-pink-400 bg-clip-text text-transparent drop-shadow-lg">
-                  SAS
+                  ProfitForce
                 </div>
                 <div className="absolute -bottom-2 left-0 h-1 w-12 bg-gradient-to-r from-blue-400 to-purple-400" />
               </div>
               <div>
                 <h1 className="text-4xl font-black text-white leading-tight">
-                  Trading<br />System v2.0
+                  Trading<br />Platform v2.0
                 </h1>
                 <p className="text-sm text-gray-400 mt-1">AI-Powered Market Intelligence</p>
               </div>
@@ -546,7 +546,7 @@ export default function SASDemo() {
 
         {/* Features Grid */}
         <div className="mt-20 pt-16 border-t border-slate-700/50">
-          <h2 className="text-3xl font-bold mb-10 text-center">✨ Advanced Features</h2>
+          <h2 className="text-3xl font-bold mb-10 text-center">✨ ProfitForce Platform Features</h2>
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
             {[
               { icon: '📍', title: '6-Zone Pivots', desc: 'R2, R1, PP, S1, S2', color: 'from-blue-500 to-cyan-500' },
@@ -579,7 +579,7 @@ export default function SASDemo() {
             ⚠️ Disclaimer: Demo system. Trading involves risk. Do your own research.
           </p>
           <p className="text-gray-600 text-xs">
-            SAS v2.0 • © 2026 ProfitForce • Institutional Grade • All Rights Reserved
+            ProfitForce v2.0 • © 2026 ProfitForce Technologies • Institutional Grade • All Rights Reserved
           </p>
         </div>
       </div>
