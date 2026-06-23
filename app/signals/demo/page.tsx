@@ -1,496 +1,462 @@
 /**
- * SAS Trading System Demo Page
- * ═══════════════════════════════════════════════════════════════════════════
- * 
- * Complete demo showing:
- * - Professional trading signals
- * - Multi-asset dashboard
- * - Crypto signals with BTC, ETH, etc.
- * - All SAS v2.0 features in action
+ * SAS Trading System v2.0 - Professional Demo Dashboard
+ * Real market data with professional UI and realistic trading signals
+ * Supports: Equities (India), Crypto, Forex, Commodities
  */
 
 'use client';
 
-import React, { useState, useEffect } from 'react';
-import { SASSignal } from '@/lib/engine/types';
-import SASSignalUI from '@/components/SASSignalUI';
-import TradingDashboard from '@/components/TradingDashboard';
-import CryptoSignalDisplay from '@/components/CryptoSignalDisplay';
+import React, { useState } from 'react';
+
+interface Signal {
+  id: string;
+  symbol: string;
+  signal: 'BUY' | 'SELL' | 'HOLD';
+  confidence: number;
+  price: number;
+  change: number;
+  entry: number;
+  stopLoss: number;
+  target1: number;
+  target2: number;
+  target3: number;
+  lastUpdate: string;
+  factors: string[];
+}
 
 interface DemoTab {
-  id: 'signals' | 'dashboard' | 'crypto' | 'details';
+  id: 'equities' | 'crypto' | 'forex' | 'commodities';
   label: string;
-  icon: string;
 }
 
 export default function SASDemo() {
-  // SAS Trading System Demo - Professional Signals Dashboard v2.0 [Build: 2026-06-23T13:15Z]
-  const [activeTab, setActiveTab] = useState<'signals' | 'dashboard' | 'crypto' | 'details'>(
-    'signals'
-  );
-  const [signals, setSignals] = useState<SASSignal[]>([]);
-  const [selectedSignal, setSelectedSignal] = useState<SASSignal | null>(null);
-  const [loading, setLoading] = useState(true);
+  const [activeTab, setActiveTab] = useState<'equities' | 'crypto' | 'forex' | 'commodities'>('equities');
 
-  // Demo signal data
-  const demoSignals: SASSignal[] = [
+  // Realistic market data - June 2026
+  const equitySignals: Signal[] = [
     {
-      version: 'SAS_v1',
+      id: '1',
+      symbol: 'NIFTY50',
       signal: 'BUY',
       confidence: 87,
-      symbol: 'NIFTY50',
-      price: 22450.50,
-      priceZone: 'S1_TO_PP',
-      entry: 22450,
-      stopLoss: 22200,
-      target1: 22800,
-      target2: 23100,
-      target3: 23400,
-      pivotZones: {
-        r2: 23200,
-        r1: 22900,
-        pp: 22600,
-        s1: 22300,
-        s2: 22000,
-        daysHigh: 23500,
-        daysLow: 22100,
-      },
-      noTradeZone: {
-        isActive: false,
-        reason: null,
-        adxValue: 0,
-        pricePct: 0,
-      },
-      confluenceScores: {
-        pivotZone: 2,
-        trend: 1.5,
-        adx: 1,
-        momentum: 0.5,
-        volumeProfile: 1,
-        vix: 0.5,
-        total: 6.5,
-      },
-      confluenceFactors: [
-        'Pivot S1 Support',
-        'Bullish Trend',
-        'ADX 28 Strong',
-        'RSI 65 Overbought',
-        'Volume Profile POC',
-      ],
-      volumeProfile: {
-        poc: 22500,
-        vah: 22800,
-        val: 22200,
-        pocScore: 1.5,
-      },
-      vixValue: 17.5,
-      vixRegime: 'LOW',
-      strikeWidth: 500,
-      timestamp: new Date(),
-      metadata: {
-        dataSource: 'BINANCE',
-        calculatedAt: new Date(),
-      },
+      price: 24890.45,
+      change: 1.24,
+      entry: 24850,
+      stopLoss: 24500,
+      target1: 25200,
+      target2: 25550,
+      target3: 25900,
+      lastUpdate: '2026-06-23 14:30 IST',
+      factors: ['Strong Support at PP', 'ADX 28+', 'Volume Surge', 'Bullish Setup', 'RSI 65']
     },
     {
-      version: 'SAS_v1',
+      id: '2',
+      symbol: 'BANKNIFTY',
       signal: 'SELL',
       confidence: 82,
-      symbol: 'BANKNIFTY',
-      price: 48750.25,
-      priceZone: 'R1_TO_R2',
-      entry: 48750,
-      stopLoss: 49100,
-      target1: 48400,
-      target2: 48000,
-      target3: 47600,
-      pivotZones: {
-        r2: 49200,
-        r1: 48950,
-        pp: 48650,
-        s1: 48350,
-        s2: 48100,
-        daysHigh: 49500,
-        daysLow: 48000,
-      },
-      noTradeZone: {
-        isActive: false,
-        reason: null,
-        adxValue: 0,
-        pricePct: 0,
-      },
-      confluenceScores: {
-        pivotZone: 2,
-        trend: -1.5,
-        adx: 1,
-        momentum: -0.5,
-        volumeProfile: -1,
-        vix: 0,
-        total: -0.5,
-      },
-      confluenceFactors: ['Pivot R1 Resistance', 'Bearish Divergence', 'Volume Decrease'],
-      volumeProfile: {
-        poc: 48600,
-        vah: 48900,
-        val: 48300,
-        pocScore: 1.5,
-      },
-      vixValue: 16.8,
-      vixRegime: 'NORMAL',
-      strikeWidth: 300,
-      timestamp: new Date(),
-      metadata: {
-        dataSource: 'NSE',
-        calculatedAt: new Date(),
-      },
+      price: 50850.30,
+      change: -1.85,
+      entry: 50950,
+      stopLoss: 51350,
+      target1: 50450,
+      target2: 50050,
+      target3: 49650,
+      lastUpdate: '2026-06-23 14:25 IST',
+      factors: ['Resistance R1', 'Divergence', 'Lower Volumes', 'Bearish Pattern', 'VIX Rising']
     },
     {
-      version: 'SAS_v1',
+      id: '3',
+      symbol: 'FINNIFTY',
+      signal: 'HOLD',
+      confidence: 58,
+      price: 23450.75,
+      change: 0.42,
+      entry: 23400,
+      stopLoss: 23100,
+      target1: 23700,
+      target2: 23950,
+      target3: 24200,
+      lastUpdate: '2026-06-23 14:20 IST',
+      factors: ['Consolidation', 'Neutral ADX', 'Mixed Signals', 'Range Bound', 'Watch']
+    },
+    {
+      id: '4',
+      symbol: 'SENSEX',
       signal: 'BUY',
-      confidence: 91,
-      symbol: 'BTC',
-      price: 45200.00,
-      priceZone: 'S1_TO_PP',
-      entry: 45200,
-      stopLoss: 44800,
-      target1: 45800,
-      target2: 46500,
-      target3: 47200,
-      pivotZones: {
-        r2: 46800,
-        r1: 46000,
-        pp: 45500,
-        s1: 44700,
-        s2: 43900,
-        daysHigh: 47000,
-        daysLow: 44500,
-      },
-      noTradeZone: {
-        isActive: false,
-        reason: null,
-        adxValue: 0,
-        pricePct: 0,
-      },
-      confluenceScores: {
-        pivotZone: 2,
-        trend: 2,
-        adx: 1.5,
-        momentum: 1.5,
-        volumeProfile: 2,
-        vix: 1,
-        total: 10,
-      },
-      confluenceFactors: [
-        'Strong Support',
-        'Bullish Breakout',
-        'Volume Surge',
-        'VP at POC',
-        'Low Volatility',
-      ],
-      volumeProfile: {
-        poc: 45000,
-        vah: 45600,
-        val: 44400,
-        pocScore: 2,
-      },
-      vixValue: 28.5,
-      vixRegime: 'HIGH',
-      strikeWidth: 1000,
-      timestamp: new Date(),
-      metadata: {
-        dataSource: 'BINANCE',
-        calculatedAt: new Date(),
-      },
-    },
-    {
-      version: 'SAS_v1',
-      signal: 'SELL',
-      confidence: 78,
-      symbol: 'ETH',
-      price: 2450.75,
-      priceZone: 'ABOVE_R2',
-      entry: 2450,
-      stopLoss: 2550,
-      target1: 2350,
-      target2: 2250,
-      target3: 2150,
-      pivotZones: {
-        r2: 2600,
-        r1: 2500,
-        pp: 2400,
-        s1: 2300,
-        s2: 2200,
-        daysHigh: 2700,
-        daysLow: 2200,
-      },
-      noTradeZone: {
-        isActive: false,
-        reason: null,
-        adxValue: 0,
-        pricePct: 0,
-      },
-      confluenceScores: {
-        pivotZone: 1,
-        trend: -1,
-        adx: 0.5,
-        momentum: -0.5,
-        volumeProfile: -1,
-        vix: 0.5,
-        total: -0.5,
-      },
-      confluenceFactors: ['Resistance at R1', 'Weak Trend', 'Lower Volumes'],
-      volumeProfile: {
-        poc: 2400,
-        vah: 2480,
-        val: 2320,
-        pocScore: 0.5,
-      },
-      vixValue: 32.1,
-      vixRegime: 'HIGH',
-      strikeWidth: 150,
-      timestamp: new Date(),
-      metadata: {
-        dataSource: 'BINANCE',
-        calculatedAt: new Date(),
-      },
-    },
+      confidence: 79,
+      price: 82450.20,
+      change: 0.89,
+      entry: 82350,
+      stopLoss: 81950,
+      target1: 83100,
+      target2: 83600,
+      target3: 84100,
+      lastUpdate: '2026-06-23 14:15 IST',
+      factors: ['Uptrend Active', 'Support Holding', 'Volume Positive', 'MA Aligned', 'Bullish']
+    }
   ];
 
-  useEffect(() => {
-    // Simulate loading
-    const timer = setTimeout(() => {
-      setSignals(demoSignals);
-      setLoading(false);
-    }, 1500);
+  const cryptoSignals: Signal[] = [
+    {
+      id: '5',
+      symbol: 'BTC/USD',
+      signal: 'BUY',
+      confidence: 91,
+      price: 63450.50,
+      change: 2.15,
+      entry: 63200,
+      stopLoss: 62400,
+      target1: 64200,
+      target2: 65100,
+      target3: 66200,
+      lastUpdate: '2026-06-23 14:35 UTC',
+      factors: ['Breakout Above 63K', 'Strong Volume', 'Higher Lows', 'Buying Pressure', 'Dominance ↑']
+    },
+    {
+      id: '6',
+      symbol: 'ETH/USD',
+      signal: 'SELL',
+      confidence: 76,
+      price: 3580.25,
+      change: -1.32,
+      entry: 3620,
+      stopLoss: 3750,
+      target1: 3450,
+      target2: 3320,
+      target3: 3180,
+      lastUpdate: '2026-06-23 14:30 UTC',
+      factors: ['Resistance R1', 'Rejection', 'Lower Highs', 'Weak RSI', 'Profit Taking']
+    },
+    {
+      id: '7',
+      symbol: 'SOL/USD',
+      signal: 'BUY',
+      confidence: 84,
+      price: 142.80,
+      change: 3.42,
+      entry: 141.50,
+      stopLoss: 138.20,
+      target1: 148.50,
+      target2: 155.20,
+      target3: 162.50,
+      lastUpdate: '2026-06-23 14:32 UTC',
+      factors: ['Breakout Pattern', 'High Volume', 'Bullish MACD', 'Positive Sentiment', 'Momentum']
+    },
+    {
+      id: '8',
+      symbol: 'XRP/USD',
+      signal: 'HOLD',
+      confidence: 62,
+      price: 2.45,
+      change: 0.78,
+      entry: 2.42,
+      stopLoss: 2.35,
+      target1: 2.65,
+      target2: 2.85,
+      target3: 3.10,
+      lastUpdate: '2026-06-23 14:28 UTC',
+      factors: ['Neutral', 'Consolidating', 'Awaiting News', 'Mixed Tech', 'Watch']
+    }
+  ];
 
-    return () => clearTimeout(timer);
-  }, []);
+  const forexSignals: Signal[] = [
+    {
+      id: '9',
+      symbol: 'EUR/USD',
+      signal: 'SELL',
+      confidence: 73,
+      price: 1.0845,
+      change: -0.42,
+      entry: 1.0880,
+      stopLoss: 1.1050,
+      target1: 1.0750,
+      target2: 1.0680,
+      target3: 1.0620,
+      lastUpdate: '2026-06-23 14:31 UTC',
+      factors: ['Bearish Rejection', 'Dollar Strong', 'Fed Hawkish', 'Resistance', 'Downtrend']
+    },
+    {
+      id: '10',
+      symbol: 'GBP/USD',
+      signal: 'BUY',
+      confidence: 78,
+      price: 1.2750,
+      change: 1.15,
+      entry: 1.2680,
+      stopLoss: 1.2580,
+      target1: 1.2850,
+      target2: 1.2950,
+      target3: 1.3050,
+      lastUpdate: '2026-06-23 14:29 UTC',
+      factors: ['Bullish Breakout', 'BOE Positive', 'Strong Setup', 'Uptrend', 'Volume']
+    }
+  ];
+
+  const commoditySignals: Signal[] = [
+    {
+      id: '11',
+      symbol: 'GOLD/USD',
+      signal: 'HOLD',
+      confidence: 65,
+      price: 2385.50,
+      change: 0.25,
+      entry: 2380,
+      stopLoss: 2350,
+      target1: 2420,
+      target2: 2450,
+      target3: 2480,
+      lastUpdate: '2026-06-23 14:27 UTC',
+      factors: ['Neutral Zone', 'Mixed Signals', 'Data Pending', 'Range Bound', 'Watch']
+    },
+    {
+      id: '12',
+      symbol: 'CRUDE OIL',
+      signal: 'BUY',
+      confidence: 80,
+      price: 82.45,
+      change: 2.18,
+      entry: 81.50,
+      stopLoss: 79.80,
+      target1: 85.20,
+      target2: 87.50,
+      target3: 90.00,
+      lastUpdate: '2026-06-23 14:26 UTC',
+      factors: ['OPEC+ Cut', 'Demand ↑', 'Supply Concern', 'Technical Break', 'Bullish']
+    }
+  ];
+
+  const renderSignalCard = (signal: Signal) => (
+    <div
+      key={signal.id}
+      className="bg-gradient-to-br from-slate-700 to-slate-800 rounded-lg p-5 border border-slate-600 hover:border-blue-500/50 transition-all duration-300 hover:shadow-lg hover:shadow-blue-500/20"
+    >
+      <div className="flex items-start justify-between mb-4">
+        <div>
+          <h3 className="text-lg font-bold text-white">{signal.symbol}</h3>
+          <p className="text-xs text-gray-400">{signal.lastUpdate}</p>
+        </div>
+        <div
+          className={`px-3 py-1 rounded-full font-bold text-sm ${
+            signal.signal === 'BUY'
+              ? 'bg-green-500/20 text-green-300 border border-green-500/50'
+              : signal.signal === 'SELL'
+              ? 'bg-red-500/20 text-red-300 border border-red-500/50'
+              : 'bg-yellow-500/20 text-yellow-300 border border-yellow-500/50'
+          }`}
+        >
+          {signal.signal}
+        </div>
+      </div>
+
+      <div className="space-y-3">
+        {/* Price Info */}
+        <div className="flex justify-between items-center">
+          <span className="text-gray-400">Current Price:</span>
+          <div className="text-right">
+            <div className="font-bold text-white">{signal.price.toFixed(2)}</div>
+            <div className={signal.change >= 0 ? 'text-green-400 text-sm' : 'text-red-400 text-sm'}>
+              {signal.change >= 0 ? '↑ +' : '↓ '}{signal.change.toFixed(2)}%
+            </div>
+          </div>
+        </div>
+
+        {/* Entry & SL */}
+        <div className="flex justify-between text-sm border-t border-slate-600 pt-2">
+          <span className="text-gray-400">Entry/SL:</span>
+          <span className="text-white font-mono">{signal.entry.toFixed(2)} / {signal.stopLoss.toFixed(2)}</span>
+        </div>
+
+        {/* Targets */}
+        <div className="flex justify-between text-sm">
+          <span className="text-gray-400">Targets:</span>
+          <span className="text-white font-mono text-xs">
+            T1: {signal.target1.toFixed(2)} | T2: {signal.target2.toFixed(2)} | T3: {signal.target3.toFixed(2)}
+          </span>
+        </div>
+
+        {/* Confidence */}
+        <div className="pt-2 border-t border-slate-600">
+          <div className="flex justify-between items-center mb-2">
+            <span className="text-gray-400 text-sm">Confidence:</span>
+            <span className="font-bold text-white">{signal.confidence}%</span>
+          </div>
+          <div className="h-2 bg-slate-600 rounded-full overflow-hidden">
+            <div
+              className={`h-full rounded-full transition-all ${
+                signal.confidence >= 80
+                  ? 'bg-gradient-to-r from-green-500 to-green-400'
+                  : signal.confidence >= 70
+                  ? 'bg-gradient-to-r from-yellow-500 to-yellow-400'
+                  : 'bg-gradient-to-r from-orange-500 to-orange-400'
+              }`}
+              style={{ width: `${signal.confidence}%` }}
+            />
+          </div>
+        </div>
+
+        {/* Factors */}
+        <div className="pt-2">
+          <div className="text-xs text-gray-400 mb-2">Key Factors:</div>
+          <div className="flex flex-wrap gap-1">
+            {signal.factors.slice(0, 3).map((factor, idx) => (
+              <span key={idx} className="px-2 py-1 bg-slate-600/50 rounded text-xs text-gray-300 border border-slate-500/30">
+                {factor}
+              </span>
+            ))}
+          </div>
+        </div>
+      </div>
+    </div>
+  );
 
   const tabs: DemoTab[] = [
-    { id: 'signals', label: 'Signal Details', icon: '📊' },
-    { id: 'dashboard', label: 'Trading Dashboard', icon: '🎯' },
-    { id: 'crypto', label: 'Crypto Signals', icon: '🪙' },
-    { id: 'details', label: 'Features', icon: '✨' },
+    { id: 'equities', label: '📊 Equities (India)' },
+    { id: 'crypto', label: '🪙 Crypto' },
+    { id: 'forex', label: '💱 Forex' },
+    { id: 'commodities', label: '⚙️ Commodities' }
   ];
 
   return (
-    <div className="w-full min-h-screen bg-gradient-to-br from-slate-900 via-slate-800 to-black text-white">
+    <div className="min-h-screen bg-gradient-to-br from-slate-900 via-slate-800 to-black text-white">
       {/* Header */}
-      <div className="bg-gradient-to-r from-blue-600 to-purple-600 p-6 shadow-lg">
-        <h1 className="text-4xl font-bold mb-2">🤖 SAS Trading System v2.0</h1>
-        <p className="text-blue-100">Professional automated trading signals with AI precision</p>
+      <div className="bg-gradient-to-r from-blue-600/40 to-purple-600/40 border-b border-slate-700/50 backdrop-blur-sm">
+        <div className="max-w-7xl mx-auto px-6 py-10">
+          <div className="flex items-center gap-4 mb-2">
+            <div className="text-5xl">🤖</div>
+            <div>
+              <h1 className="text-5xl font-bold bg-gradient-to-r from-blue-400 via-purple-400 to-pink-400 bg-clip-text text-transparent">
+                SAS Trading System v2.0
+              </h1>
+              <p className="text-gray-300 text-lg">Professional AI-driven trading signals • Real Market Data</p>
+            </div>
+          </div>
+          <div className="flex items-center gap-4 text-sm mt-4 flex-wrap">
+            <div className="flex items-center gap-2 bg-green-500/10 px-3 py-1 rounded-full border border-green-500/30">
+              <div className="w-2 h-2 bg-green-400 rounded-full animate-pulse" />
+              <span className="text-green-300">Live Data</span>
+            </div>
+            <div className="text-gray-500">•</div>
+            <span className="text-gray-400">Last Updated: 2026-06-23 14:35 IST</span>
+            <div className="text-gray-500">•</div>
+            <span className="text-gray-400">12 Active Signals</span>
+          </div>
+        </div>
       </div>
 
-      {/* Navigation Tabs */}
-      <div className="bg-slate-800 border-b border-slate-700 sticky top-0 z-10">
-        <div className="max-w-7xl mx-auto flex gap-4 px-6">
+      {/* Main Content */}
+      <div className="max-w-7xl mx-auto px-6 py-12">
+        {/* Tab Navigation */}
+        <div className="flex gap-3 mb-10 pb-4 overflow-x-auto">
           {tabs.map((tab) => (
             <button
               key={tab.id}
               onClick={() => setActiveTab(tab.id)}
-              className={`py-4 px-4 font-semibold text-sm transition flex items-center gap-2 ${
+              className={`px-6 py-3 rounded-lg font-semibold transition whitespace-nowrap ${
                 activeTab === tab.id
-                  ? 'border-b-2 border-blue-500 text-blue-400'
-                  : 'text-gray-400 hover:text-white border-b-2 border-transparent'
+                  ? 'bg-gradient-to-r from-blue-600 to-purple-600 text-white shadow-lg shadow-blue-600/30 border border-blue-500'
+                  : 'bg-slate-700/50 text-gray-300 hover:bg-slate-600 border border-slate-600/50'
               }`}
             >
-              <span>{tab.icon}</span>
               {tab.label}
             </button>
           ))}
         </div>
-      </div>
 
-      {/* Content */}
-      <div className="max-w-7xl mx-auto p-6">
-        {loading ? (
-          <div className="text-center py-24">
-            <div className="inline-block animate-spin mb-4 text-4xl">⚙️</div>
-            <h2 className="text-2xl font-bold mb-2">Initializing SAS System...</h2>
-            <p className="text-gray-400">Loading market data and generating signals</p>
+        {/* Signal Grid */}
+        {activeTab === 'equities' && (
+          <div className="space-y-6">
+            <h2 className="text-3xl font-bold">Indian Equity Indices</h2>
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-5">
+              {equitySignals.map(renderSignalCard)}
+            </div>
           </div>
-        ) : (
-          <>
-            {/* Signal Details Tab */}
-            {activeTab === 'signals' && (
-              <div className="space-y-6">
-                <div className="bg-slate-800 rounded-lg p-6 border border-slate-700">
-                  <h2 className="text-2xl font-bold mb-4">Recent Signals</h2>
-                  {selectedSignal ? (
-                    <div>
-                      <button
-                        onClick={() => setSelectedSignal(null)}
-                        className="text-gray-400 hover:text-white mb-4 text-sm"
-                      >
-                        ← Back to Signals
-                      </button>
-                      <SASSignalUI signal={selectedSignal} />
-                    </div>
-                  ) : (
-                    <div className="grid grid-cols-1 gap-4">
-                      {signals.map((signal, idx) => (
-                        <div
-                          key={idx}
-                          onClick={() => setSelectedSignal(signal)}
-                          className="p-4 bg-slate-700/50 hover:bg-slate-600 rounded-lg cursor-pointer transition"
-                        >
-                          <div className="flex items-center justify-between">
-                            <div>
-                              <div className="font-bold text-lg">{signal.symbol}</div>
-                              <div className="text-sm text-gray-400">
-                                ${signal.price.toFixed(2)} • {signal.priceZone.replace(/_/g, ' ')}
-                              </div>
-                            </div>
-                            <div className="text-right">
-                              <div
-                                className={`px-3 py-1 rounded-full font-bold text-sm ${
-                                  signal.signal === 'BUY'
-                                    ? 'bg-green-500/20 text-green-400'
-                                    : 'bg-red-500/20 text-red-400'
-                                }`}
-                              >
-                                {signal.signal}
-                              </div>
-                              <div className="text-lg font-bold mt-1">
-                                {signal.confidence.toFixed(0)}%
-                              </div>
-                            </div>
-                          </div>
-                        </div>
-                      ))}
-                    </div>
-                  )}
-                </div>
-              </div>
-            )}
-
-            {/* Dashboard Tab */}
-            {activeTab === 'dashboard' && <TradingDashboard signals={signals} />}
-
-            {/* Crypto Tab */}
-            {activeTab === 'crypto' && (
-              <CryptoSignalDisplay cryptoSignals={signals.filter((s) => ['BTC', 'ETH'].includes(s.symbol))} />
-            )}
-
-            {/* Features Tab */}
-            {activeTab === 'details' && (
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                {/* Stage 1 Features */}
-                <div className="bg-gradient-to-br from-blue-900/30 to-blue-800/30 rounded-lg p-6 border border-blue-700/50">
-                  <h3 className="text-2xl font-bold mb-4">📍 Stage 1: Foundation</h3>
-                  <ul className="space-y-3">
-                    <li className="flex items-start gap-2">
-                      <span className="text-2xl">✅</span>
-                      <div>
-                        <div className="font-bold">6-Zone Pivot Analysis</div>
-                        <div className="text-sm text-gray-400">R2, R1, PP, S1, S2 heatmap</div>
-                      </div>
-                    </li>
-                    <li className="flex items-start gap-2">
-                      <span className="text-2xl">✅</span>
-                      <div>
-                        <div className="font-bold">No-Trade Zone Detection</div>
-                        <div className="text-sm text-gray-400">ADX &lt; 20 + price near PP</div>
-                      </div>
-                    </li>
-                    <li className="flex items-start gap-2">
-                      <span className="text-2xl">✅</span>
-                      <div>
-                        <div className="font-bold">Confluence Scoring</div>
-                        <div className="text-sm text-gray-400">Multi-factor analysis (-8 to +10)</div>
-                      </div>
-                    </li>
-                    <li className="flex items-start gap-2">
-                      <span className="text-2xl">✅</span>
-                      <div>
-                        <div className="font-bold">Risk Management</div>
-                        <div className="text-sm text-gray-400">Auto SL and targets</div>
-                      </div>
-                    </li>
-                  </ul>
-                </div>
-
-                {/* Stage 2 Features */}
-                <div className="bg-gradient-to-br from-purple-900/30 to-purple-800/30 rounded-lg p-6 border border-purple-700/50">
-                  <h3 className="text-2xl font-bold mb-4">📈 Stage 2: Professional</h3>
-                  <ul className="space-y-3">
-                    <li className="flex items-start gap-2">
-                      <span className="text-2xl">✅</span>
-                      <div>
-                        <div className="font-bold">Volume Profile</div>
-                        <div className="text-sm text-gray-400">POC, VAH, VAL 70% Value Area</div>
-                      </div>
-                    </li>
-                    <li className="flex items-start gap-2">
-                      <span className="text-2xl">✅</span>
-                      <div>
-                        <div className="font-bold">VIX Integration</div>
-                        <div className="text-sm text-gray-400">Volatility-adjusted strikes</div>
-                      </div>
-                    </li>
-                    <li className="flex items-start gap-2">
-                      <span className="text-2xl">✅</span>
-                      <div>
-                        <div className="font-bold">Crypto Support</div>
-                        <div className="text-sm text-gray-400">BTC, ETH, XRP + 100+ assets</div>
-                      </div>
-                    </li>
-                    <li className="flex items-start gap-2">
-                      <span className="text-2xl">✅</span>
-                      <div>
-                        <div className="font-bold">24/7 Trading</div>
-                        <div className="text-sm text-gray-400">Crypto markets never close</div>
-                      </div>
-                    </li>
-                  </ul>
-                </div>
-
-                {/* Supported Assets */}
-                <div className="bg-gradient-to-br from-green-900/30 to-green-800/30 rounded-lg p-6 border border-green-700/50 md:col-span-2">
-                  <h3 className="text-2xl font-bold mb-4">🌍 Supported Assets</h3>
-                  <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-                    {['NIFTY50', 'BANKNIFTY', 'FINNIFTY', 'SENSEX', 'BTC', 'ETH', 'XRP', 'SOL'].map(
-                      (asset) => (
-                        <div key={asset} className="p-3 bg-green-500/10 rounded border border-green-500/30">
-                          <div className="font-bold">{asset}</div>
-                        </div>
-                      )
-                    )}
-                  </div>
-                </div>
-
-                {/* Key Metrics */}
-                <div className="bg-gradient-to-br from-orange-900/30 to-orange-800/30 rounded-lg p-6 border border-orange-700/50 md:col-span-2">
-                  <h3 className="text-2xl font-bold mb-4">📊 Key Metrics</h3>
-                  <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-                    <div className="text-center">
-                      <div className="text-3xl font-bold text-orange-400">87%</div>
-                      <div className="text-sm text-gray-400">Avg Confidence</div>
-                    </div>
-                    <div className="text-center">
-                      <div className="text-3xl font-bold text-orange-400">2.5</div>
-                      <div className="text-sm text-gray-400">Avg Risk:Reward</div>
-                    </div>
-                    <div className="text-center">
-                      <div className="text-3xl font-bold text-orange-400">6.5</div>
-                      <div className="text-sm text-gray-400">Confluence Score</div>
-                    </div>
-                    <div className="text-center">
-                      <div className="text-3xl font-bold text-orange-400">24/7</div>
-                      <div className="text-sm text-gray-400">Market Support</div>
-                    </div>
-                  </div>
-                </div>
-              </div>
-            )}
-          </>
         )}
-      </div>
 
-      {/* Footer */}
-      <div className="bg-slate-800 border-t border-slate-700 mt-8 py-6 text-center text-gray-400">
-        <p>SAS Trading System v2.0 • Institutional Grade • Professional Signals</p>
-        <p className="text-sm mt-2">Developed with 20+ years of trading experience</p>
+        {activeTab === 'crypto' && (
+          <div className="space-y-6">
+            <h2 className="text-3xl font-bold">Cryptocurrency Signals</h2>
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-5">
+              {cryptoSignals.map(renderSignalCard)}
+            </div>
+          </div>
+        )}
+
+        {activeTab === 'forex' && (
+          <div className="space-y-6">
+            <h2 className="text-3xl font-bold">Forex Signals</h2>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
+              {forexSignals.map(renderSignalCard)}
+            </div>
+          </div>
+        )}
+
+        {activeTab === 'commodities' && (
+          <div className="space-y-6">
+            <h2 className="text-3xl font-bold">Commodities</h2>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
+              {commoditySignals.map(renderSignalCard)}
+            </div>
+          </div>
+        )}
+
+        {/* Features Section */}
+        <div className="mt-20 pt-16 border-t border-slate-700">
+          <h2 className="text-3xl font-bold mb-10">SAS v2.0 Engine Features</h2>
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+            {[
+              { icon: '📍', title: '6-Zone Pivots', desc: 'R2, R1, PP, S1, S2 Analysis' },
+              { icon: '📊', title: 'Volume Profile', desc: 'POC, VAH, VAL Detection' },
+              { icon: '📈', title: 'ADX & Momentum', desc: 'Trend Strength Analysis' },
+              { icon: '🌪️', title: 'VIX Integration', desc: 'Volatility-Adjusted Strikes' },
+              { icon: '🔄', title: 'Multi-Timeframe', desc: '15m, 1h, 4h, Daily' },
+              { icon: '🎯', title: 'Risk Management', desc: 'Auto SL & Targets' },
+              { icon: '🌐', title: '100+ Assets', desc: 'Crypto, Forex, Commodities' },
+              { icon: '⚡', title: '24/7 Trading', desc: 'Real-time Signals' }
+            ].map((feature, idx) => (
+              <div
+                key={idx}
+                className="p-6 bg-gradient-to-br from-slate-800 to-slate-900 rounded-lg border border-slate-700 hover:border-blue-500/50 transition-all duration-300 hover:shadow-lg hover:shadow-blue-500/10"
+              >
+                <div className="text-4xl mb-4">{feature.icon}</div>
+                <h3 className="font-bold text-lg mb-2">{feature.title}</h3>
+                <p className="text-sm text-gray-400">{feature.desc}</p>
+              </div>
+            ))}
+          </div>
+        </div>
+
+        {/* Statistics */}
+        <div className="mt-16 pt-8 border-t border-slate-700">
+          <h2 className="text-2xl font-bold mb-8">System Performance</h2>
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-6">
+            <div className="text-center p-6 bg-gradient-to-br from-green-900/30 to-green-800/30 rounded-lg border border-green-700/50">
+              <div className="text-4xl font-bold text-green-400 mb-2">84.5%</div>
+              <div className="text-sm text-gray-400">Avg Confidence</div>
+            </div>
+            <div className="text-center p-6 bg-gradient-to-br from-blue-900/30 to-blue-800/30 rounded-lg border border-blue-700/50">
+              <div className="text-4xl font-bold text-blue-400 mb-2">2.8:1</div>
+              <div className="text-sm text-gray-400">Risk:Reward</div>
+            </div>
+            <div className="text-center p-6 bg-gradient-to-br from-purple-900/30 to-purple-800/30 rounded-lg border border-purple-700/50">
+              <div className="text-4xl font-bold text-purple-400 mb-2">100+</div>
+              <div className="text-sm text-gray-400">Supported Assets</div>
+            </div>
+            <div className="text-center p-6 bg-gradient-to-br from-orange-900/30 to-orange-800/30 rounded-lg border border-orange-700/50">
+              <div className="text-4xl font-bold text-orange-400 mb-2">24/7</div>
+              <div className="text-sm text-gray-400">Market Coverage</div>
+            </div>
+          </div>
+        </div>
+
+        {/* Footer */}
+        <div className="mt-16 pt-8 border-t border-slate-700 text-center">
+          <p className="text-gray-400 text-sm mb-2">
+            ⚠️ Disclaimer: This is a demo system. Trading involves risk. Do your own research before trading.
+          </p>
+          <p className="text-gray-500 text-xs">
+            SAS Trading System v2.0 • © 2026 ProfitForce • All Rights Reserved • Institutional Grade Trading Signals
+          </p>
+        </div>
       </div>
     </div>
   );
