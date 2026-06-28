@@ -60,24 +60,56 @@ class MarketData:
         self._generate_sample_data()  # Generate initial data
         
     def _generate_sample_data(self):
-        """Generate sample market data for testing"""
+        """Generate sample market data for testing with realistic NIFTY 50 stocks"""
         import random
+        
+        # Realistic base prices for NIFTY 50 stocks and indices
         base_prices = {
-            "NIFTY": 23500,
-            "BANKNIFTY": 48000,
-            "BTCUSD": 65000,
-            "EURUSD": 1.09
+            # Indices
+            "NIFTY": 24850,
+            "BANKNIFTY": 51000,
+            # Top NIFTY 50 Stocks
+            "RELIANCE": 3150,
+            "TCS": 3850,
+            "INFY": 2940,
+            "HDFC": 2620,
+            "ICICIBANK": 1240,
+            "WIPRO": 425,
+            "AXISBANK": 1125,
+            "LT": 2680,
+            "MARUTI": 9850,
+            "SUNPHARMA": 1845,
+            "ITC": 425,
+            "BAJAJFINSV": 1680,
+            "HCLTECH": 1925,
+            "ASIAPAINT": 3480,
+            "DMARKT": 6320,
+            "POWERGRID": 285,
+            "ULTRACEMCO": 11280,
+            "NTPC": 325,
+            "SBILIFE": 1520,
+            "LTIM": 5840,
+            # Crypto & Forex
+            "BTCUSD": 67500,
+            "EURUSD": 1.0850
         }
+        
         base_price = base_prices.get(self.symbol, 100)
         
-        # Generate 200 candles of sample data
+        # Generate 200 candles with trending behavior
+        trend_direction = random.choice([-1, 0, 1])
+        
         for i in range(200):
-            close = base_price + random.uniform(-500, 500)
-            open_ = base_price + random.uniform(-500, 500)
-            high = max(open_, close) + random.uniform(0, 300)
-            low = min(open_, close) - random.uniform(0, 300)
-            volume = random.randint(1000000, 10000000)
-            oi = random.randint(100000, 500000)
+            # Add trend with realistic volatility
+            trend_component = trend_direction * random.uniform(5, 50)
+            close = base_price + trend_component + random.uniform(-200, 200)
+            open_ = base_price + random.uniform(-150, 150)
+            high = max(open_, close) + random.uniform(50, 300)
+            low = min(open_, close) - random.uniform(50, 300)
+            
+            # Realistic volume based on market cap
+            volume = random.randint(2000000, 15000000) if self.symbol != "BTCUSD" else random.randint(50000, 200000)
+            oi = random.randint(100000, 500000) if "NIFTY" in self.symbol or "BANK" in self.symbol else 0
             
             self.add_candle(open_, high, low, close, volume, oi)
             base_price = close
@@ -290,13 +322,100 @@ class IndicatorEngine:
             "current": current_oi,
             "previous": prev_oi
         }
+    
+    @staticmethod
+    def detect_dow_theory_trend(high: List[float], low: List[float]) -> str:
+        """
+        Detect trend using DOW Theory principles
+        Uptrend: Higher highs and higher lows
+        Downtrend: Lower highs and lower lows
+        """
+        if len(high) < 5 or len(low) < 5:
+            return "neutral"
+        
+        # Check last 5 candles for higher highs/lows or lower highs/lows
+        recent_highs = high[-5:]
+        recent_lows = low[-5:]
+        
+        higher_highs = recent_highs[-1] > recent_highs[-3] > recent_highs[-5]
+        higher_lows = recent_lows[-1] > recent_lows[-3] > recent_lows[-5]
+        
+        lower_highs = recent_highs[-1] < recent_highs[-3] < recent_highs[-5]
+        lower_lows = recent_lows[-1] < recent_lows[-3] < recent_lows[-5]
+        
+        if higher_highs and higher_lows:
+            return "bullish_dow"
+        elif lower_highs and lower_lows:
+            return "bearish_dow"
+        else:
+            return "neutral_dow"
+    
+    @staticmethod
+    def detect_primary_trend(close: List[float]) -> Dict:
+        """
+        Detect primary trend using DOW Theory
+        Analyzes longer-term trend direction
+        """
+        if len(close) < 20:
+            return {"primary_trend": "unknown", "strength": 0}
+        
+        ema50 = IndicatorEngine.calculate_ema(close, 50)[-1] if len(close) >= 50 else close[-1]
+        ema200 = IndicatorEngine.calculate_ema(close, 200)[-1] if len(close) >= 200 else close[-1]
+        
+        current = close[-1]
+        
+        if current > ema50 > ema200:
+            strength = 90
+            trend = "strong_bullish"
+        elif current > ema50:
+            strength = 75
+            trend = "bullish"
+        elif current > ema200:
+            strength = 60
+            trend = "mild_bullish"
+        elif current < ema50 < ema200:
+            strength = 90
+            trend = "strong_bearish"
+        elif current < ema50:
+            strength = 75
+            trend = "bearish"
+        else:
+            strength = 60
+            trend = "mild_bearish"
+        
+        return {"primary_trend": trend, "strength": strength}
+    
+    @staticmethod
+    def detect_volume_confirmation(volume: List[int], close: List[float]) -> str:
+        """
+        DOW Theory: Volume should confirm the trend
+        """
+        if len(volume) < 5 or len(close) < 5:
+            return "unknown"
+        
+        recent_volumes = volume[-5:]
+        recent_closes = close[-5:]
+        
+        avg_vol = sum(recent_volumes) / len(recent_volumes)
+        current_vol = recent_volumes[-1]
+        
+        price_up = recent_closes[-1] > recent_closes[-3]
+        price_down = recent_closes[-1] < recent_closes[-3]
+        vol_high = current_vol > avg_vol * 1.2
+        
+        if (price_up and vol_high) or (price_down and vol_high):
+            return "confirmed"
+        elif current_vol > avg_vol * 0.8:
+            return "partially_confirmed"
+        else:
+            return "weak"
 
 # ============================================================
 # STRATEGY ENGINE
 # ============================================================
 
 class StrategyEngine:
-    """Smart Money Strategy Implementation"""
+    """Smart Money Strategy Implementation with DOW Theory"""
     
     def __init__(self):
         self.indicators = IndicatorEngine()
@@ -334,18 +453,23 @@ class StrategyEngine:
         bos = self.indicators.detect_bos(highs, lows, closes)
         oi_change = self.indicators.detect_oi_change(ois)
         
-        # Trend determination
+        # DOW THEORY ANALYSIS
+        dow_trend = self.indicators.detect_dow_theory_trend(highs, lows)
+        primary_trend = self.indicators.detect_primary_trend(closes)
+        volume_conf = self.indicators.detect_volume_confirmation(volumes, closes)
+        
+        # Trend determination (with DOW Theory)
         trend = "bullish" if current_price > ema20 > ema50 > ema200 else \
                 "bearish" if current_price < ema20 < ema50 < ema200 else "neutral"
         
         # Support and Resistance
-        support = min(lows[-50:])
-        resistance = max(highs[-50:])
+        support = min(lows[-50:]) if len(lows) >= 50 else min(lows)
+        resistance = max(highs[-50:]) if len(highs) >= 50 else max(highs)
         
         # ATR for stop loss
         atr = self.indicators.calculate_atr(highs, lows, closes, 14)[-1] or 10
         
-        # BUY Signal Conditions
+        # BUY Signal Conditions (with DOW Theory)
         buy_conditions = [
             current_price > daily_poc,
             current_price > weekly_poc,
@@ -353,10 +477,13 @@ class StrategyEngine:
             ema20 > ema50,
             ema50 > ema200,
             volume_status == "Strong",
-            bos["type"] == "bullish" or liquidity["type"] == "demand"
+            bos["type"] == "bullish" or liquidity["type"] == "demand",
+            "bullish" in dow_trend,  # DOW Theory confirmation
+            "bullish" in primary_trend["primary_trend"],  # Primary trend confirmation
+            volume_conf in ["confirmed", "partially_confirmed"]  # Volume confirmation
         ]
         
-        # SELL Signal Conditions
+        # SELL Signal Conditions (with DOW Theory)
         sell_conditions = [
             current_price < daily_poc,
             current_price < weekly_poc,
@@ -364,29 +491,38 @@ class StrategyEngine:
             ema20 < ema50,
             ema50 < ema200,
             volume_status == "Strong",
-            bos["type"] == "bearish" or liquidity["type"] == "supply"
+            bos["type"] == "bearish" or liquidity["type"] == "supply",
+            "bearish" in dow_trend,  # DOW Theory confirmation
+            "bearish" in primary_trend["primary_trend"],  # Primary trend confirmation
+            volume_conf in ["confirmed", "partially_confirmed"]  # Volume confirmation
         ]
         
         # Signal generation
         signal_type = SignalType.WAIT
         confidence = 50
         entry = current_price
-        target = resistance if sum(buy_conditions) >= 6 else support
-        stop_loss = support if sum(buy_conditions) >= 6 else resistance
+        target = resistance if sum(buy_conditions) >= 7 else support
+        stop_loss = support if sum(buy_conditions) >= 7 else resistance
         
-        if sum(buy_conditions) >= 6:
+        if sum(buy_conditions) >= 7:
             signal_type = SignalType.BUY
-            confidence = min(99, 60 + (volume_status == "Strong" and 10) + (oi_change["trend"] == "up" and 10))
-            entry = resistance
-            target = resistance + (resistance - support) * 0.5
-            stop_loss = support
+            # Confidence based on DOW Theory, volume, and OI
+            dow_strength = primary_trend.get("strength", 50)
+            vol_boost = 15 if volume_conf == "confirmed" else 5
+            confidence = min(99, 50 + dow_strength + vol_boost)
+            entry = current_price
+            target = current_price + (resistance - support) * 0.618  # Fibonacci
+            stop_loss = current_price - atr * 2
         
-        elif sum(sell_conditions) >= 6:
+        elif sum(sell_conditions) >= 7:
             signal_type = SignalType.SELL
-            confidence = min(99, 60 + (volume_status == "Strong" and 10) + (oi_change["trend"] == "down" and 10))
-            entry = support
-            target = support - (resistance - support) * 0.5
-            stop_loss = resistance
+            # Confidence based on DOW Theory, volume, and OI
+            dow_strength = primary_trend.get("strength", 50)
+            vol_boost = 15 if volume_conf == "confirmed" else 5
+            confidence = min(99, 50 + dow_strength + vol_boost)
+            entry = current_price
+            target = current_price - (resistance - support) * 0.618  # Fibonacci
+            stop_loss = current_price + atr * 2
         
         # Risk Reward
         if signal_type == SignalType.BUY:
@@ -404,30 +540,49 @@ class StrategyEngine:
         signal = Signal(signal_type, current_price, confidence, entry, target, stop_loss, risk_reward)
         signal.reason = self._generate_reason(
             buy_conditions if signal_type == SignalType.BUY else sell_conditions,
-            trend, volume_status, oi_change
+            trend, volume_status, oi_change, dow_trend, primary_trend, volume_conf
         )
         
         return signal
     
     def _generate_reason(self, conditions: List[bool], trend: str, 
-                        volume_status: str, oi_change: Dict) -> str:
-        """Generate reason for signal"""
+                        volume_status: str, oi_change: Dict,
+                        dow_trend: str, primary_trend: Dict, volume_conf: str) -> str:
+        """Generate reason for signal with DOW Theory"""
         reasons = []
         
+        # EMA Analysis
         if trend == "bullish":
-            reasons.append("EMA Bullish Alignment")
+            reasons.append("EMA Bullish")
         elif trend == "bearish":
-            reasons.append("EMA Bearish Alignment")
+            reasons.append("EMA Bearish")
         
-        if volume_status == "Strong":
-            reasons.append("Strong Volume Confirmation")
+        # DOW Theory
+        if "bullish_dow" in dow_trend:
+            reasons.append("DOW: Higher Highs/Lows")
+        elif "bearish_dow" in dow_trend:
+            reasons.append("DOW: Lower Highs/Lows")
         
+        # Primary Trend Strength
+        trend_str = primary_trend.get("primary_trend", "")
+        if "strong" in trend_str:
+            reasons.append("Strong Primary Trend")
+        elif "bullish" in trend_str or "bearish" in trend_str:
+            reasons.append("Confirmed Trend")
+        
+        # Volume Confirmation
+        if volume_conf == "confirmed":
+            reasons.append("Volume Confirmed")
+        elif volume_conf == "partially_confirmed":
+            reasons.append("Partial Volume")
+        
+        # OI Change
         if oi_change["trend"] == "up":
-            reasons.append("OI Increasing")
+            reasons.append("OI Rising")
         elif oi_change["trend"] == "down":
-            reasons.append("OI Decreasing")
+            reasons.append("OI Falling")
         
-        return " | ".join(reasons)
+        return " | ".join(reasons) if reasons else "Multi-timeframe Analysis"
 
 # ============================================================
 # DATA COLLECTION
@@ -495,8 +650,31 @@ data_collector = DataCollector()
 
 # Market data storage
 market_data = {
+    # Indices
     "NIFTY": MarketData("NIFTY"),
     "BANKNIFTY": MarketData("BANKNIFTY"),
+    # Top NIFTY 50 Stocks
+    "RELIANCE": MarketData("RELIANCE"),
+    "TCS": MarketData("TCS"),
+    "INFY": MarketData("INFY"),
+    "HDFC": MarketData("HDFC"),
+    "ICICIBANK": MarketData("ICICIBANK"),
+    "WIPRO": MarketData("WIPRO"),
+    "AXISBANK": MarketData("AXISBANK"),
+    "LT": MarketData("LT"),
+    "MARUTI": MarketData("MARUTI"),
+    "SUNPHARMA": MarketData("SUNPHARMA"),
+    "ITC": MarketData("ITC"),
+    "BAJAJFINSV": MarketData("BAJAJFINSV"),
+    "HCLTECH": MarketData("HCLTECH"),
+    "ASIAPAINT": MarketData("ASIAPAINT"),
+    "DMARKT": MarketData("DMARKT"),
+    "POWERGRID": MarketData("POWERGRID"),
+    "ULTRACEMCO": MarketData("ULTRACEMCO"),
+    "NTPC": MarketData("NTPC"),
+    "SBILIFE": MarketData("SBILIFE"),
+    "LTIM": MarketData("LTIM"),
+    # Crypto & Forex
     "BTCUSD": MarketData("BTCUSD"),
     "EURUSD": MarketData("EURUSD"),
 }
@@ -512,12 +690,35 @@ async def health_check():
 
 @app.get("/api/markets")
 async def get_markets():
-    """Get available markets"""
+    """Get available markets with DOW Theory Analysis"""
     return {
         "markets": [
-            {"id": "NIFTY", "name": "NIFTY 50", "type": "equity", "exchange": "NSE"},
-            {"id": "BANKNIFTY", "name": "BANKNIFTY", "type": "equity", "exchange": "NSE"},
-            {"id": "BTCUSD", "name": "Bitcoin", "type": "crypto", "exchange": "CoinGecko"},
+            # Indices
+            {"id": "NIFTY", "name": "NIFTY 50 Index", "type": "index", "exchange": "NSE"},
+            {"id": "BANKNIFTY", "name": "BANKNIFTY Index", "type": "index", "exchange": "NSE"},
+            # Blue Chip Stocks
+            {"id": "RELIANCE", "name": "Reliance Industries", "type": "equity", "exchange": "NSE"},
+            {"id": "TCS", "name": "Tata Consultancy Services", "type": "equity", "exchange": "NSE"},
+            {"id": "INFY", "name": "Infosys", "type": "equity", "exchange": "NSE"},
+            {"id": "HDFC", "name": "HDFC Bank", "type": "equity", "exchange": "NSE"},
+            {"id": "ICICIBANK", "name": "ICICI Bank", "type": "equity", "exchange": "NSE"},
+            {"id": "WIPRO", "name": "Wipro", "type": "equity", "exchange": "NSE"},
+            {"id": "AXISBANK", "name": "Axis Bank", "type": "equity", "exchange": "NSE"},
+            {"id": "LT", "name": "Larsen & Toubro", "type": "equity", "exchange": "NSE"},
+            {"id": "MARUTI", "name": "Maruti Suzuki", "type": "equity", "exchange": "NSE"},
+            {"id": "SUNPHARMA", "name": "Sun Pharmaceuticals", "type": "equity", "exchange": "NSE"},
+            {"id": "ITC", "name": "ITC Limited", "type": "equity", "exchange": "NSE"},
+            {"id": "BAJAJFINSV", "name": "Bajaj Finserv", "type": "equity", "exchange": "NSE"},
+            {"id": "HCLTECH", "name": "HCL Technologies", "type": "equity", "exchange": "NSE"},
+            {"id": "ASIAPAINT", "name": "Asian Paints", "type": "equity", "exchange": "NSE"},
+            {"id": "DMARKT", "name": "Dmart", "type": "equity", "exchange": "NSE"},
+            {"id": "POWERGRID", "name": "Power Grid", "type": "equity", "exchange": "NSE"},
+            {"id": "ULTRACEMCO", "name": "UltraTech Cement", "type": "equity", "exchange": "NSE"},
+            {"id": "NTPC", "name": "NTPC Limited", "type": "equity", "exchange": "NSE"},
+            {"id": "SBILIFE", "name": "SBI Life Insurance", "type": "equity", "exchange": "NSE"},
+            {"id": "LTIM", "name": "LTI Mindtree", "type": "equity", "exchange": "NSE"},
+            # Crypto & Forex
+            {"id": "BTCUSD", "name": "Bitcoin/USD", "type": "crypto", "exchange": "CoinGecko"},
             {"id": "EURUSD", "name": "EUR/USD", "type": "forex", "exchange": "Forex"},
         ]
     }
