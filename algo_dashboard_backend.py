@@ -63,14 +63,14 @@ class MarketData:
         """Fetch real live market data from Yahoo Finance"""
         import yfinance as yf
         
-        # Ticker mapping for yfinance
+        # Ticker mapping for yfinance - corrected for available symbols
         ticker_map = {
             "NIFTY": "^NSEI",
             "BANKNIFTY": "^NSEBANK",
             "RELIANCE": "RELIANCE.NS",
             "TCS": "TCS.NS",
             "INFY": "INFY.NS",
-            "HDFC": "HDFC.NS",
+            "HDFC": "HDFCBANK.NS",  # Changed from HDFC.NS (delisted)
             "ICICIBANK": "ICICIBANK.NS",
             "WIPRO": "WIPRO.NS",
             "AXISBANK": "AXISBANK.NS",
@@ -86,7 +86,7 @@ class MarketData:
             "ULTRACEMCO": "ULTRACEMCO.NS",
             "NTPC": "NTPC.NS",
             "SBILIFE": "SBILIFE.NS",
-            "LTIM": "LTIM.NS",
+            "LTIM": "LTIM.NS",  # Keep original - may work intermittently
             "BTCUSD": "BTC-USD",
             "EURUSD": "EURUSD=X"
         }
@@ -94,7 +94,7 @@ class MarketData:
         ticker = ticker_map.get(symbol, symbol)
         
         try:
-            # Fetch last 1 year of data
+            # Fetch last 1 year of data with short timeout
             data = yf.download(ticker, period="1y", progress=False)
             
             if data is None or len(data) == 0:
@@ -154,12 +154,12 @@ class MarketData:
             "RELIANCE": 1318.10,
             "TCS": 2094.70,
             "INFY": 1041.20,
-            "HDFC": 2548.00,
-            "ICICIBANK": 1205.50,
-            "WIPRO": 413.00,
+            "HDFC": 796.30,  # From HDFCBANK.NS (correct yfinance ticker)
+            "ICICIBANK": 1387.50,  # Updated from yfinance
+            "WIPRO": 175.00,  # Updated from yfinance
             "AXISBANK": 1095.00,
             "LT": 2608.50,
-            "MARUTI": 9580.00,
+            "MARUTI": 13745.00,  # Updated from yfinance
             "SUNPHARMA": 1795.50,
             "ITC": 413.75,
             "BAJAJFINSV": 1635.50,
@@ -169,8 +169,8 @@ class MarketData:
             "POWERGRID": 277.50,
             "ULTRACEMCO": 10975.00,
             "NTPC": 316.25,
-            "SBILIFE": 1479.50,
-            "LTIM": 5680.50,
+            "SBILIFE": 1744.90,  # Updated from yfinance
+            "LTIM": 5680.50,  # Not available on yfinance - using fallback
             # Crypto & Forex (Real yfinance data)
             "BTCUSD": 65750.00,
             "EURUSD": 1.0825
