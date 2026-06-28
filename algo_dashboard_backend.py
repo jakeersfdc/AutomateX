@@ -95,24 +95,33 @@ class MarketData:
         }
         
         base_price = base_prices.get(self.symbol, 100)
+        current_price = base_price
         
-        # Generate 200 candles with trending behavior
-        trend_direction = random.choice([-1, 0, 1])
-        
+        # Generate 200 candles with realistic oscillation around base price
+        # Use percentage-based moves to keep prices realistic
         for i in range(200):
-            # Add trend with realistic volatility
-            trend_component = trend_direction * random.uniform(5, 50)
-            close = base_price + trend_component + random.uniform(-200, 200)
-            open_ = base_price + random.uniform(-150, 150)
-            high = max(open_, close) + random.uniform(50, 300)
-            low = min(open_, close) - random.uniform(50, 300)
+            # Small percentage changes (0.5% to 2%) instead of compounding trends
+            change_percent = random.uniform(-0.02, 0.02)  # ±2% max per candle
+            current_price = current_price * (1 + change_percent)
+            
+            # Keep within reasonable range of base price (±10%)
+            min_price = base_price * 0.90
+            max_price = base_price * 1.10
+            if current_price < min_price:
+                current_price = min_price + random.uniform(0, base_price * 0.05)
+            elif current_price > max_price:
+                current_price = max_price - random.uniform(0, base_price * 0.05)
+            
+            open_ = current_price * random.uniform(0.98, 1.02)
+            close = current_price * random.uniform(0.98, 1.02)
+            high = max(open_, close) * random.uniform(1.01, 1.03)
+            low = min(open_, close) * random.uniform(0.97, 0.99)
             
             # Realistic volume based on market cap
             volume = random.randint(2000000, 15000000) if self.symbol != "BTCUSD" else random.randint(50000, 200000)
             oi = random.randint(100000, 500000) if "NIFTY" in self.symbol or "BANK" in self.symbol else 0
             
             self.add_candle(open_, high, low, close, volume, oi)
-            base_price = close
         
     def add_candle(self, open_: float, high: float, low: float, close: float, volume: int, oi: int = 0):
         self.price_history.append({
