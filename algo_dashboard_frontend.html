@@ -1,0 +1,834 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>NIFTY Institutional SmartMoney Dashboard</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: linear-gradient(135deg, #0f1419 0%, #1a1f2e 100%);
+            color: #e0e0e0;
+            min-height: 100vh;
+            overflow-x: hidden;
+        }
+
+        .container {
+            max-width: 1600px;
+            margin: 0 auto;
+            padding: 20px;
+        }
+
+        /* HEADER */
+        .header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 30px;
+            padding: 20px;
+            background: linear-gradient(135deg, #1e2936 0%, #2d3748 100%);
+            border-radius: 12px;
+            border-left: 4px solid #00ff88;
+            box-shadow: 0 8px 32px rgba(0, 255, 136, 0.1);
+        }
+
+        .header h1 {
+            font-size: 28px;
+            font-weight: 700;
+            background: linear-gradient(135deg, #00ff88, #00d9ff);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+        }
+
+        .time-display {
+            font-size: 14px;
+            color: #888;
+        }
+
+        /* MARKET TABS */
+        .tabs {
+            display: flex;
+            gap: 10px;
+            margin-bottom: 30px;
+            flex-wrap: wrap;
+        }
+
+        .tab {
+            padding: 10px 20px;
+            background: #1e2936;
+            border: 2px solid #333;
+            border-radius: 8px;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            color: #ccc;
+            font-weight: 500;
+        }
+
+        .tab:hover {
+            border-color: #00ff88;
+            color: #00ff88;
+        }
+
+        .tab.active {
+            background: linear-gradient(135deg, #00ff88 0%, #00d9ff 100%);
+            border-color: transparent;
+            color: #000;
+        }
+
+        /* MAIN DASHBOARD GRID */
+        .dashboard-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(350px, 1fr));
+            gap: 20px;
+            margin-bottom: 30px;
+        }
+
+        /* CARDS */
+        .card {
+            background: linear-gradient(135deg, #1e2936 0%, #2d3748 100%);
+            border: 1px solid #3a4556;
+            border-radius: 12px;
+            padding: 24px;
+            box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3);
+            transition: all 0.3s ease;
+        }
+
+        .card:hover {
+            border-color: #00ff88;
+            box-shadow: 0 12px 48px rgba(0, 255, 136, 0.2);
+            transform: translateY(-2px);
+        }
+
+        .card-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 20px;
+            padding-bottom: 15px;
+            border-bottom: 2px solid #3a4556;
+        }
+
+        .card-title {
+            font-size: 18px;
+            font-weight: 600;
+            color: #00ff88;
+        }
+
+        .status-badge {
+            display: inline-block;
+            padding: 4px 12px;
+            border-radius: 20px;
+            font-size: 12px;
+            font-weight: 600;
+        }
+
+        .status-buy {
+            background: rgba(0, 255, 136, 0.2);
+            color: #00ff88;
+            border: 1px solid #00ff88;
+        }
+
+        .status-sell {
+            background: rgba(255, 50, 100, 0.2);
+            color: #ff3264;
+            border: 1px solid #ff3264;
+        }
+
+        .status-wait {
+            background: rgba(255, 200, 50, 0.2);
+            color: #ffc832;
+            border: 1px solid #ffc832;
+        }
+
+        /* PRICE SECTION */
+        .price-section {
+            margin-bottom: 20px;
+        }
+
+        .price-display {
+            font-size: 28px;
+            font-weight: 700;
+            color: #fff;
+            margin-bottom: 10px;
+        }
+
+        .price-change {
+            display: flex;
+            gap: 10px;
+            align-items: center;
+        }
+
+        .change-up {
+            color: #00ff88;
+            font-weight: 600;
+        }
+
+        .change-down {
+            color: #ff3264;
+            font-weight: 600;
+        }
+
+        /* METRICS GRID */
+        .metrics-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 15px;
+            margin-bottom: 20px;
+        }
+
+        .metric {
+            background: rgba(0, 255, 136, 0.05);
+            border: 1px solid rgba(0, 255, 136, 0.2);
+            border-radius: 8px;
+            padding: 12px;
+        }
+
+        .metric-label {
+            font-size: 12px;
+            color: #888;
+            text-transform: uppercase;
+            margin-bottom: 5px;
+        }
+
+        .metric-value {
+            font-size: 16px;
+            font-weight: 600;
+            color: #00ff88;
+        }
+
+        /* SIGNAL SECTION */
+        .signal-section {
+            background: rgba(0, 255, 136, 0.05);
+            border: 2px solid rgba(0, 255, 136, 0.3);
+            border-radius: 12px;
+            padding: 20px;
+            margin-bottom: 20px;
+        }
+
+        .signal-main {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 15px;
+        }
+
+        .signal-title {
+            font-size: 12px;
+            color: #888;
+            text-transform: uppercase;
+            margin-bottom: 5px;
+        }
+
+        .signal-big {
+            font-size: 32px;
+            font-weight: 700;
+            color: #00ff88;
+        }
+
+        .signal-big.sell {
+            color: #ff3264;
+        }
+
+        .signal-big.wait {
+            color: #ffc832;
+        }
+
+        .confidence-bar {
+            width: 100%;
+            height: 6px;
+            background: #333;
+            border-radius: 3px;
+            overflow: hidden;
+            margin-bottom: 10px;
+        }
+
+        .confidence-fill {
+            height: 100%;
+            background: linear-gradient(90deg, #00ff88, #00d9ff);
+            transition: width 0.3s ease;
+        }
+
+        /* LEVELS SECTION */
+        .levels-section {
+            display: grid;
+            grid-template-columns: 1fr 1fr 1fr;
+            gap: 15px;
+        }
+
+        .level-box {
+            background: rgba(255, 255, 255, 0.02);
+            border: 1px solid #3a4556;
+            border-radius: 8px;
+            padding: 12px;
+            text-align: center;
+        }
+
+        .level-label {
+            font-size: 11px;
+            color: #888;
+            text-transform: uppercase;
+            margin-bottom: 5px;
+        }
+
+        .level-value {
+            font-size: 16px;
+            font-weight: 600;
+            color: #fff;
+        }
+
+        .level-buy .level-value {
+            color: #00ff88;
+        }
+
+        .level-sell .level-value {
+            color: #ff3264;
+        }
+
+        /* TRADE SETUP CARD */
+        .trade-setup {
+            background: linear-gradient(135deg, rgba(0, 255, 136, 0.1) 0%, rgba(0, 217, 255, 0.1) 100%);
+            border: 2px solid rgba(0, 255, 136, 0.3);
+            border-radius: 12px;
+            padding: 20px;
+            margin-top: 20px;
+        }
+
+        .setup-row {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 12px 0;
+            border-bottom: 1px solid rgba(0, 255, 136, 0.1);
+        }
+
+        .setup-row:last-child {
+            border-bottom: none;
+        }
+
+        .setup-label {
+            color: #888;
+            font-size: 14px;
+        }
+
+        .setup-value {
+            font-size: 16px;
+            font-weight: 600;
+            color: #00ff88;
+        }
+
+        /* ALERTS SECTION */
+        .alerts-section {
+            background: linear-gradient(135deg, #1e2936 0%, #2d3748 100%);
+            border: 1px solid #3a4556;
+            border-radius: 12px;
+            padding: 24px;
+            margin-top: 30px;
+        }
+
+        .alerts-title {
+            font-size: 18px;
+            font-weight: 600;
+            color: #00ff88;
+            margin-bottom: 20px;
+        }
+
+        .alert-item {
+            background: rgba(255, 255, 255, 0.02);
+            border-left: 3px solid #00ff88;
+            padding: 12px;
+            margin-bottom: 10px;
+            border-radius: 6px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .alert-item.warning {
+            border-left-color: #ffc832;
+        }
+
+        .alert-item.danger {
+            border-left-color: #ff3264;
+        }
+
+        .alert-text {
+            font-size: 14px;
+        }
+
+        .alert-time {
+            font-size: 12px;
+            color: #888;
+        }
+
+        /* MULTI-MARKET OVERVIEW */
+        .overview-table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-top: 20px;
+        }
+
+        .overview-table th {
+            background: rgba(0, 255, 136, 0.1);
+            padding: 12px;
+            text-align: left;
+            font-size: 12px;
+            color: #00ff88;
+            text-transform: uppercase;
+            border-bottom: 2px solid rgba(0, 255, 136, 0.3);
+        }
+
+        .overview-table td {
+            padding: 12px;
+            border-bottom: 1px solid #3a4556;
+        }
+
+        .overview-table tr:hover {
+            background: rgba(0, 255, 136, 0.05);
+        }
+
+        /* CHARTS */
+        .charts-section {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(400px, 1fr));
+            gap: 20px;
+            margin-top: 30px;
+        }
+
+        .chart-card {
+            background: linear-gradient(135deg, #1e2936 0%, #2d3748 100%);
+            border: 1px solid #3a4556;
+            border-radius: 12px;
+            padding: 24px;
+            box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3);
+        }
+
+        .chart-title {
+            font-size: 16px;
+            font-weight: 600;
+            color: #00ff88;
+            margin-bottom: 20px;
+        }
+
+        canvas {
+            max-width: 100%;
+            height: auto;
+        }
+
+        /* RESPONSIVE */
+        @media (max-width: 1024px) {
+            .dashboard-grid {
+                grid-template-columns: 1fr;
+            }
+
+            .levels-section {
+                grid-template-columns: 1fr;
+            }
+        }
+
+        @media (max-width: 768px) {
+            .header {
+                flex-direction: column;
+                gap: 15px;
+            }
+
+            .tabs {
+                justify-content: center;
+            }
+
+            .metrics-grid {
+                grid-template-columns: 1fr;
+            }
+        }
+
+        /* LOADING SPINNER */
+        .spinner {
+            border: 3px solid rgba(0, 255, 136, 0.2);
+            border-top: 3px solid #00ff88;
+            border-radius: 50%;
+            width: 30px;
+            height: 30px;
+            animation: spin 1s linear infinite;
+            display: inline-block;
+        }
+
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+
+        /* ANIMATIONS */
+        @keyframes pulse {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.5; }
+        }
+
+        .pulse {
+            animation: pulse 2s infinite;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <!-- HEADER -->
+        <div class="header">
+            <div>
+                <h1>🚀 NIFTY INSTITUTIONAL SMARTMONEY DASHBOARD</h1>
+                <p style="color: #888; margin-top: 5px;">Algo Model • Real-Time Analysis • Smart Signals</p>
+            </div>
+            <div class="time-display">
+                <div id="current-time" style="font-size: 18px; font-weight: 600; color: #00ff88;"></div>
+                <div style="font-size: 12px; color: #888; margin-top: 5px;" id="market-status">Market Status</div>
+            </div>
+        </div>
+
+        <!-- MARKET TABS -->
+        <div class="tabs">
+            <div class="tab active" onclick="switchMarket('NIFTY')">📊 NIFTY 50</div>
+            <div class="tab" onclick="switchMarket('BANKNIFTY')">🏦 BANKNIFTY</div>
+            <div class="tab" onclick="switchMarket('BTCUSD')">₿ BITCOIN</div>
+            <div class="tab" onclick="switchMarket('EURUSD')">💱 EUR/USD</div>
+            <div class="tab" onclick="switchMarket('overview')" style="margin-left: auto;">📈 OVERVIEW</div>
+        </div>
+
+        <!-- MAIN DASHBOARD -->
+        <div id="dashboard-container">
+            <!-- Content will be loaded here -->
+        </div>
+
+        <!-- ALERTS SECTION -->
+        <div class="alerts-section">
+            <div class="alerts-title">📢 LIVE ALERTS & NOTIFICATIONS</div>
+            <div id="alerts-container">
+                <div class="alert-item">
+                    <div>
+                        <div class="alert-text">🟢 Dashboard loaded and monitoring markets...</div>
+                        <div class="alert-time" id="init-time"></div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // ============================================================
+        // DASHBOARD CONTROLLER
+        // ============================================================
+
+        const API_URL = 'http://localhost:8000/api';
+        let currentMarket = 'NIFTY';
+        let marketData = {};
+        let alertHistory = [];
+
+        // Update time
+        function updateTime() {
+            const now = new Date();
+            document.getElementById('current-time').textContent = now.toLocaleTimeString();
+            
+            const hour = now.getHours();
+            const day = now.getDay();
+            let status = 'Market Closed';
+            
+            if (day >= 1 && day <= 5 && hour >= 9 && hour < 16) {
+                status = '🟢 LIVE TRADING';
+            } else if (day >= 1 && day <= 5 && hour >= 16 && hour < 23) {
+                status = '📋 POST MARKET';
+            }
+            
+            document.getElementById('market-status').textContent = status;
+        }
+
+        setInterval(updateTime, 1000);
+        updateTime();
+
+        // Fetch market data
+        async function fetchMarketData(market) {
+            try {
+                const response = await fetch(`${API_URL}/signal/${market}`);
+                const data = await response.json();
+                marketData[market] = data;
+                return data;
+            } catch (error) {
+                console.error('Error fetching data:', error);
+                addAlert('⚠️ Error fetching ' + market + ' data', 'warning');
+                return null;
+            }
+        }
+
+        // Switch market
+        async function switchMarket(market) {
+            currentMarket = market;
+            
+            // Update active tab
+            document.querySelectorAll('.tab').forEach(tab => {
+                tab.classList.remove('active');
+            });
+            event.target.classList.add('active');
+
+            if (market === 'overview') {
+                displayOverview();
+            } else {
+                const data = await fetchMarketData(market);
+                if (data) {
+                    displayMarketDashboard(market, data);
+                }
+            }
+        }
+
+        // Display market dashboard
+        function displayMarketDashboard(market, data) {
+            const container = document.getElementById('dashboard-container');
+            
+            const signalClass = data.signal === 'BUY' ? 'status-buy' : data.signal === 'SELL' ? 'status-sell' : 'status-wait';
+            const signalColor = data.signal === 'BUY' ? '' : data.signal === 'SELL' ? 'sell' : 'wait';
+
+            const html = `
+                <div class="dashboard-grid">
+                    <div class="card">
+                        <div class="card-header">
+                            <div class="card-title">${market}</div>
+                            <div class="status-badge ${signalClass}">${data.signal}</div>
+                        </div>
+
+                        <div class="price-section">
+                            <div class="price-display">₹ ${data.price.toFixed(2)}</div>
+                            <div class="price-change">
+                                <span class="${data.change > 0 ? 'change-up' : 'change-down'}">
+                                    ${data.change > 0 ? '▲' : '▼'} ${Math.abs(data.change).toFixed(2)}%
+                                </span>
+                                <span style="color: #888;">Volume: ${(data.volume / 1000000).toFixed(2)}M</span>
+                            </div>
+                        </div>
+
+                        <div class="metrics-grid">
+                            <div class="metric">
+                                <div class="metric-label">Confidence</div>
+                                <div class="metric-value">${data.confidence}%</div>
+                            </div>
+                            <div class="metric">
+                                <div class="metric-label">Risk:Reward</div>
+                                <div class="metric-value">1:${data.riskReward.toFixed(2)}</div>
+                            </div>
+                        </div>
+
+                        <div class="signal-section">
+                            <div class="signal-main">
+                                <div>
+                                    <div class="signal-title">Current Signal</div>
+                                    <div class="signal-big ${signalColor}">${data.signal}</div>
+                                </div>
+                                <div style="text-align: right;">
+                                    <div class="signal-title">Action</div>
+                                    <div style="font-size: 18px; font-weight: 600; color: #00d9ff;">
+                                        ${data.signal === 'BUY' ? 'BUY CE' : data.signal === 'SELL' ? 'SELL PE' : 'HOLD'}
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="confidence-bar">
+                                <div class="confidence-fill" style="width: ${data.confidence}%"></div>
+                            </div>
+                            <div style="font-size: 12px; color: #888;">Confidence Score: ${data.confidence}%</div>
+                        </div>
+
+                        <div class="trade-setup">
+                            <div style="font-size: 14px; font-weight: 600; color: #00ff88; margin-bottom: 15px;">⚙️ TRADE SETUP</div>
+                            <div class="setup-row">
+                                <div class="setup-label">Entry Level</div>
+                                <div class="setup-value">₹ ${data.entry.toFixed(2)}</div>
+                            </div>
+                            <div class="setup-row">
+                                <div class="setup-label">Stop Loss</div>
+                                <div class="setup-value">₹ ${data.stopLoss.toFixed(2)}</div>
+                            </div>
+                            <div class="setup-row">
+                                <div class="setup-label">Target</div>
+                                <div class="setup-value">₹ ${data.target.toFixed(2)}</div>
+                            </div>
+                            <div class="setup-row">
+                                <div class="setup-label">Risk per lot</div>
+                                <div class="setup-value" style="color: #ff3264;">₹ ${Math.abs(data.entry - data.stopLoss).toFixed(2)}</div>
+                            </div>
+                            <div class="setup-row">
+                                <div class="setup-label">Reward per lot</div>
+                                <div class="setup-value" style="color: #00ff88;">₹ ${Math.abs(data.target - data.entry).toFixed(2)}</div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="card">
+                        <div class="card-header">
+                            <div class="card-title">📊 PRICE LEVELS</div>
+                        </div>
+
+                        <div class="levels-section">
+                            <div class="level-box level-buy">
+                                <div class="level-label">Resistance</div>
+                                <div class="level-value">₹ ${data.target.toFixed(2)}</div>
+                            </div>
+                            <div class="level-box">
+                                <div class="level-label">Current</div>
+                                <div class="level-value">₹ ${data.price.toFixed(2)}</div>
+                            </div>
+                            <div class="level-box level-sell">
+                                <div class="level-label">Support</div>
+                                <div class="level-value">₹ ${data.stopLoss.toFixed(2)}</div>
+                            </div>
+                        </div>
+
+                        <div style="margin-top: 30px;">
+                            <div style="font-size: 14px; font-weight: 600; color: #00ff88; margin-bottom: 15px;">ℹ️ SIGNAL REASON</div>
+                            <div style="background: rgba(0, 255, 136, 0.05); border-left: 3px solid #00ff88; padding: 15px; border-radius: 6px; font-size: 13px; line-height: 1.6; color: #ccc;">
+                                ${data.reason || 'Strong confluence of multiple technical indicators with excellent risk-reward setup.'}
+                            </div>
+                        </div>
+
+                        <div style="margin-top: 30px;">
+                            <div style="font-size: 14px; font-weight: 600; color: #00ff88; margin-bottom: 15px;">📋 STRATEGY CHECKLIST</div>
+                            <div style="display: flex; flex-direction: column; gap: 8px;">
+                                <div style="display: flex; align-items: center; gap: 10px; font-size: 13px;">
+                                    <span style="color: #00ff88;">✓</span>
+                                    <span>EMA Alignment Confirmed</span>
+                                </div>
+                                <div style="display: flex; align-items: center; gap: 10px; font-size: 13px;">
+                                    <span style="color: #00ff88;">✓</span>
+                                    <span>Volume > 20-SMA</span>
+                                </div>
+                                <div style="display: flex; align-items: center; gap: 10px; font-size: 13px;">
+                                    <span style="color: #00ff88;">✓</span>
+                                    <span>Support/Resistance Identified</span>
+                                </div>
+                                <div style="display: flex; align-items: center; gap: 10px; font-size: 13px;">
+                                    <span style="color: #00ff88;">✓</span>
+                                    <span>Smart Money Concepts Aligned</span>
+                                </div>
+                                <div style="display: flex; align-items: center; gap: 10px; font-size: 13px;">
+                                    <span style="color: #00ff88;">✓</span>
+                                    <span>Risk:Reward Favorable</span>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            `;
+
+            container.innerHTML = html;
+
+            // Add alert
+            if (data.signal === 'BUY') {
+                addAlert(`🟢 NEW BUY SIGNAL: ${market} at ₹${data.price.toFixed(2)} | Entry: ₹${data.entry.toFixed(2)} | Target: ₹${data.target.toFixed(2)}`, 'success');
+            } else if (data.signal === 'SELL') {
+                addAlert(`🔴 NEW SELL SIGNAL: ${market} at ₹${data.price.toFixed(2)} | Entry: ₹${data.entry.toFixed(2)} | Target: ₹${data.stopLoss.toFixed(2)}`, 'danger');
+            }
+        }
+
+        // Display overview
+        async function displayOverview() {
+            const container = document.getElementById('dashboard-container');
+
+            // Fetch all markets
+            const niftyData = await fetchMarketData('NIFTY');
+            const bankniftyData = await fetchMarketData('BANKNIFTY');
+            const btcData = await fetchMarketData('BTCUSD');
+            const eurData = await fetchMarketData('EURUSD');
+
+            const html = `
+                <div class="card">
+                    <div class="card-header">
+                        <div class="card-title">📊 MULTI-MARKET OVERVIEW</div>
+                    </div>
+
+                    <table class="overview-table">
+                        <thead>
+                            <tr>
+                                <th>Market</th>
+                                <th>Price</th>
+                                <th>Signal</th>
+                                <th>Confidence</th>
+                                <th>RR Ratio</th>
+                                <th>Action</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            ${[niftyData, bankniftyData, btcData, eurData].map(d => {
+                                if (!d) return '';
+                                const signalClass = d.signal === 'BUY' ? 'status-buy' : d.signal === 'SELL' ? 'status-sell' : 'status-wait';
+                                return `
+                                    <tr>
+                                        <td style="font-weight: 600;">${d.market}</td>
+                                        <td>₹ ${d.price.toFixed(2)}</td>
+                                        <td><span class="status-badge ${signalClass}">${d.signal}</span></td>
+                                        <td style="color: #00ff88;">${d.confidence}%</td>
+                                        <td>1:${d.riskReward.toFixed(2)}</td>
+                                        <td>${d.signal === 'BUY' ? 'BUY CE' : d.signal === 'SELL' ? 'SELL PE' : 'HOLD'}</td>
+                                    </tr>
+                                `;
+                            }).join('')}
+                        </tbody>
+                    </table>
+                </div>
+            `;
+
+            container.innerHTML = html;
+        }
+
+        // Add alert
+        function addAlert(message, type = 'info') {
+            const alertsContainer = document.getElementById('alerts-container');
+            const alertItem = document.createElement('div');
+            const alertClass = type === 'warning' ? 'warning' : type === 'danger' ? 'danger' : '';
+            
+            alertItem.className = `alert-item ${alertClass}`;
+            alertItem.innerHTML = `
+                <div>
+                    <div class="alert-text">${message}</div>
+                    <div class="alert-time">${new Date().toLocaleTimeString()}</div>
+                </div>
+            `;
+
+            // Insert at top
+            alertsContainer.insertBefore(alertItem, alertsContainer.firstChild);
+
+            // Keep only last 10 alerts
+            while (alertsContainer.children.length > 10) {
+                alertsContainer.removeChild(alertsContainer.lastChild);
+            }
+
+            // Alert notification
+            if ('Notification' in window && Notification.permission === 'granted') {
+                new Notification('NIFTY Dashboard Alert', {
+                    body: message,
+                    icon: 'data:image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100"><text y="50" font-size="50">📈</text></svg>'
+                });
+            }
+        }
+
+        // Request notification permission
+        if ('Notification' in window && Notification.permission === 'default') {
+            Notification.requestPermission();
+        }
+
+        // Auto-refresh data
+        setInterval(async () => {
+            if (currentMarket !== 'overview') {
+                const data = await fetchMarketData(currentMarket);
+                if (data) {
+                    displayMarketDashboard(currentMarket, data);
+                }
+            }
+        }, 5000);
+
+        // Initial load
+        fetchMarketData('NIFTY').then(data => {
+            if (data) {
+                displayMarketDashboard('NIFTY', data);
+            }
+        });
+    </script>
+</body>
+</html>

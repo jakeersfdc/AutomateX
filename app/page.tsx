@@ -1,266 +1,116 @@
-/**
- * Profitforce Trading Platform - Home Page
- * Main dashboard for multi-strategy trading
- */
-
 'use client';
 
 import React, { useState } from 'react';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import MultiMarketDashboard from '@/components/MultiMarketDashboard';
+import ForexSignalDisplay from '@/components/ForexSignalDisplay';
+import CryptoSignalDisplay from '@/components/CryptoSignalDisplay';
 import V2_1SignalDisplay from '@/components/V2_1SignalDisplay';
 import PaperTradingTracker from '@/components/PaperTradingTracker';
 import DualStrategyDashboard from '@/components/DualStrategyDashboard';
-import { Zap, BarChart3, Settings } from 'lucide-react';
-
-// Lazy load heavy components
-const StrategyStatsPage = React.lazy(() => import('./signals/stats/page'));
+import LiveSignalsDashboard from '@/components/LiveSignalsDashboard';
+import { Activity, Coins, Globe, BarChart3, Zap, Settings, Zap as Lightning } from 'lucide-react';
 
 export default function HomePage() {
-  const [activeTab, setActiveTab] = useState('comparison');
+  const [activeTab, setActiveTab] = useState('live');
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-gray-950 to-gray-900">
       <div className="max-w-7xl mx-auto p-6">
         {/* Header */}
-        <div className="mb-8 border-b border-gray-800 pb-6">
-          <h1 className="text-5xl font-bold text-transparent bg-clip-text bg-gradient-to-r from-blue-400 via-purple-400 to-pink-400">
-            Profitforce Trading
-          </h1>
-          <p className="text-gray-400 mt-2">
-            Multi-strategy automated trading system with institutional-grade execution
-          </p>
+        <div className="mb-8">
+          <div className="flex items-center gap-3 mb-2">
+            <Activity className="h-8 w-8 text-blue-400" />
+            <h1 className="text-4xl font-bold text-white">Profitforce</h1>
+          </div>
+          <p className="text-gray-400">Professional multi-market trading platform</p>
         </div>
 
-        {/* Key Metrics Bar */}
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-8">
-          <div className="bg-gray-800 rounded-lg p-4 border border-gray-700">
-            <p className="text-gray-400 text-sm">Total Strategies</p>
-            <p className="text-3xl font-bold text-white">2</p>
-            <p className="text-xs text-gray-500 mt-1">v2.1 + NITS</p>
-          </div>
-          <div className="bg-gray-800 rounded-lg p-4 border border-gray-700">
-            <p className="text-gray-400 text-sm">Status</p>
-            <p className="text-2xl font-bold text-green-400">🟢 LIVE</p>
-            <p className="text-xs text-gray-500 mt-1">Vercel deployed</p>
-          </div>
-          <div className="bg-gray-800 rounded-lg p-4 border border-gray-700">
-            <p className="text-gray-400 text-sm">Paper Trading</p>
-            <p className="text-2xl font-bold text-blue-400">Enabled</p>
-            <p className="text-xs text-gray-500 mt-1">Risk-free testing</p>
-          </div>
-          <div className="bg-gray-800 rounded-lg p-4 border border-gray-700">
-            <p className="text-gray-400 text-sm">Broker Integration</p>
-            <p className="text-2xl font-bold text-purple-400">Ready</p>
-            <p className="text-xs text-gray-500 mt-1">Zerodha/Angel</p>
-          </div>
-        </div>
-
-        {/* Main Content Tabs */}
+        {/* Navigation Tabs */}
         <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
-          <TabsList className="grid w-full grid-cols-2 md:grid-cols-6 gap-2 mb-8 bg-gray-800 border border-gray-700 p-1">
-            <TabsTrigger
-              value="comparison"
-              className="flex items-center gap-2 data-[state=active]:bg-purple-600"
-            >
-              <Zap className="h-4 w-4" />
-              <span className="hidden sm:inline">Comparison</span>
+          <TabsList className="grid w-full grid-cols-2 md:grid-cols-8 gap-2 mb-8 bg-gray-800 border border-gray-700 p-2 rounded-lg">
+            <TabsTrigger value="live" className="data-[state=active]:bg-red-600">
+              <Lightning className="h-4 w-4 mr-2" />
+              <span className="hidden sm:inline text-xs">Live</span>
             </TabsTrigger>
-            <TabsTrigger
-              value="v2-1"
-              className="flex items-center gap-2 data-[state=active]:bg-blue-600"
-            >
-              <span className="font-mono text-xs">v2.1</span>
+            <TabsTrigger value="dashboard" className="data-[state=active]:bg-blue-600">
+              <BarChart3 className="h-4 w-4 mr-2" />
+              <span className="hidden sm:inline text-xs">Markets</span>
             </TabsTrigger>
-            <TabsTrigger
-              value="nits"
-              className="flex items-center gap-2 data-[state=active]:bg-purple-700"
-            >
-              <span className="font-mono text-xs">NITS</span>
+            <TabsTrigger value="crypto" className="data-[state=active]:bg-orange-600">
+              <Coins className="h-4 w-4 mr-2" />
+              <span className="hidden sm:inline text-xs">Crypto</span>
             </TabsTrigger>
-            <TabsTrigger
-              value="paper-trading"
-              className="flex items-center gap-2 data-[state=active]:bg-green-600"
-            >
-              <span className="hidden sm:inline text-xs">Paper Trade</span>
+            <TabsTrigger value="forex" className="data-[state=active]:bg-cyan-600">
+              <Globe className="h-4 w-4 mr-2" />
+              <span className="hidden sm:inline text-xs">Forex</span>
             </TabsTrigger>
-            <TabsTrigger
-              value="statistics"
-              className="flex items-center gap-2 data-[state=active]:bg-orange-600"
-            >
-              <BarChart3 className="h-4 w-4" />
-              <span className="hidden sm:inline text-xs">Stats</span>
+            <TabsTrigger value="v2-1" className="data-[state=active]:bg-purple-600">
+              <Zap className="h-4 w-4 mr-2" />
+              <span className="hidden sm:inline text-xs">v2.1</span>
             </TabsTrigger>
-            <TabsTrigger
-              value="tools"
-              className="flex items-center gap-2 data-[state=active]:bg-gray-700"
-            >
+            <TabsTrigger value="comparison" className="data-[state=active]:bg-pink-600">
+              <span className="text-xs">Comp</span>
+            </TabsTrigger>
+            <TabsTrigger value="paper" className="data-[state=active]:bg-green-600">
+              <span className="text-xs">Paper</span>
+            </TabsTrigger>
+            <TabsTrigger value="tools" className="data-[state=active]:bg-gray-700">
               <Settings className="h-4 w-4" />
-              <span className="hidden sm:inline text-xs">Tools</span>
             </TabsTrigger>
           </TabsList>
+
+          {/* Live Signals Tab */}
+          <TabsContent value="live" className="bg-gray-800 rounded-lg border border-gray-700 p-6">
+            <LiveSignalsDashboard />
+          </TabsContent>
+
+          {/* Dashboard Tab */}
+          <TabsContent value="dashboard" className="bg-gray-800 rounded-lg border border-gray-700 p-6">
+            <MultiMarketDashboard />
+          </TabsContent>
+
+          {/* Crypto Tab */}
+          <TabsContent value="crypto" className="bg-gray-800 rounded-lg border border-gray-700 p-6">
+            <CryptoSignalDisplay />
+          </TabsContent>
+
+          {/* Forex Tab */}
+          <TabsContent value="forex" className="bg-gray-800 rounded-lg border border-gray-700 p-6">
+            <ForexSignalDisplay />
+          </TabsContent>
+
+          {/* v2.1 Tab */}
+          <TabsContent value="v2-1" className="bg-gray-800 rounded-lg border border-gray-700 p-6">
+            <div className="bg-purple-900 bg-opacity-30 p-4 rounded-lg mb-6 border border-purple-700">
+              <h3 className="font-semibold text-purple-300">NIFTY PRO v2.1 Strategy</h3>
+              <p className="text-gray-300 text-sm mt-1">Ichimoku � Stochastic RSI � ROC</p>
+            </div>
+            <V2_1SignalDisplay />
+          </TabsContent>
 
           {/* Comparison Tab */}
           <TabsContent value="comparison" className="bg-gray-800 rounded-lg border border-gray-700 p-6">
             <DualStrategyDashboard />
           </TabsContent>
 
-          {/* V2.1 Tab */}
-          <TabsContent value="v2-1" className="bg-gray-800 rounded-lg border border-gray-700 p-6">
-            <div className="bg-blue-900 bg-opacity-30 p-4 rounded-lg mb-6 border border-blue-700">
-              <h3 className="font-semibold text-blue-300 flex items-center gap-2">
-                <Zap className="h-5 w-5" />
-                v2.1 Technical Analysis Strategy
-              </h3>
-              <p className="text-gray-300 text-sm mt-1">
-                Ichimoku Cloud (±3) • Stochastic RSI (±2) • ROC (±2) • RSI • MACD • Volume
-              </p>
-            </div>
-            <V2_1SignalDisplay />
-          </TabsContent>
-
-          {/* NITS Tab */}
-          <TabsContent value="nits" className="bg-gray-800 rounded-lg border border-gray-700 p-6">
-            <div className="bg-purple-900 bg-opacity-30 p-4 rounded-lg mb-6 border border-purple-700">
-              <h3 className="font-semibold text-purple-300 flex items-center gap-2">
-                <Zap className="h-5 w-5" />
-                NITS Institutional Strategy
-              </h3>
-              <p className="text-gray-300 text-sm mt-1">
-                Opening Range Breakout • POC Levels • Liquidity Sweeps • Multi-Timeframe Analysis
-              </p>
-            </div>
-            <div className="text-center py-12 text-gray-400">
-              NITS signals loading... (Fetch from /api/nits)
-            </div>
-          </TabsContent>
-
           {/* Paper Trading Tab */}
-          <TabsContent value="paper-trading" className="bg-gray-800 rounded-lg border border-gray-700 p-6">
+          <TabsContent value="paper" className="bg-gray-800 rounded-lg border border-gray-700 p-6">
             <div className="bg-green-900 bg-opacity-30 p-4 rounded-lg mb-6 border border-green-700">
               <h3 className="font-semibold text-green-300">Paper Trading Simulator</h3>
-              <p className="text-gray-300 text-sm mt-1">
-                Risk-free trading practice with real strategies
-              </p>
+              <p className="text-gray-300 text-sm mt-1">Risk-free practice trading</p>
             </div>
             <PaperTradingTracker />
           </TabsContent>
 
-          {/* Statistics Tab */}
-          <TabsContent value="statistics" className="bg-gray-800 rounded-lg border border-gray-700 p-6">
-            <React.Suspense
-              fallback={
-                <div className="flex justify-center items-center h-96 text-gray-400">
-                  Loading statistics dashboard...
-                </div>
-              }
-            >
-              <StrategyStatsPage />
-            </React.Suspense>
-          </TabsContent>
-
           {/* Tools Tab */}
-          <TabsContent value="tools" className="space-y-6">
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-              {/* API Tester */}
-              <div className="bg-gray-800 rounded-lg border border-gray-700 p-6">
-                <h3 className="font-semibold text-white mb-4 flex items-center gap-2">
-                  <Settings className="h-5 w-5" />
-                  API Testing Tool
-                </h3>
-                <p className="text-gray-400 text-sm mb-4">
-                  Test strategy endpoints with custom OHLCV data
-                </p>
-                <button className="w-full bg-blue-600 hover:bg-blue-700 text-white py-2 rounded-lg font-medium transition">
-                  Open API Tester
-                </button>
-              </div>
-
-              {/* Broker Integration */}
-              <div className="bg-gray-800 rounded-lg border border-gray-700 p-6">
-                <h3 className="font-semibold text-white mb-4 flex items-center gap-2">
-                  <Settings className="h-5 w-5" />
-                  Broker Integration
-                </h3>
-                <p className="text-gray-400 text-sm mb-4">
-                  Configure and connect to Zerodha, Angel, or Shoonya brokers
-                </p>
-                <button className="w-full bg-purple-600 hover:bg-purple-700 text-white py-2 rounded-lg font-medium transition">
-                  Configure Broker
-                </button>
-              </div>
-
-              {/* Trade Execution */}
-              <div className="bg-gray-800 rounded-lg border border-gray-700 p-6">
-                <h3 className="font-semibold text-white mb-4 flex items-center gap-2">
-                  <Settings className="h-5 w-5" />
-                  Automated Execution
-                </h3>
-                <p className="text-gray-400 text-sm mb-4">
-                  Execute real trades automatically from strategies
-                </p>
-                <button className="w-full bg-red-600 hover:bg-red-700 text-white py-2 rounded-lg font-medium transition disabled:opacity-50"
-                  disabled>
-                  Enable Execution (Requires Broker)
-                </button>
-              </div>
-
-              {/* Options Selector */}
-              <div className="bg-gray-800 rounded-lg border border-gray-700 p-6">
-                <h3 className="font-semibold text-white mb-4 flex items-center gap-2">
-                  <Settings className="h-5 w-5" />
-                  Options Strike Selector
-                </h3>
-                <p className="text-gray-400 text-sm mb-4">
-                  VIX-based option strike recommendations
-                </p>
-                <button className="w-full bg-yellow-600 hover:bg-yellow-700 text-white py-2 rounded-lg font-medium transition">
-                  Open Selector
-                </button>
-              </div>
-            </div>
-
-            {/* Advanced Settings */}
-            <div className="bg-gray-800 rounded-lg border border-gray-700 p-6">
-              <h3 className="font-semibold text-white mb-4">System Settings</h3>
-              <div className="space-y-4">
-                <div>
-                  <label className="text-gray-300 text-sm">Risk Per Trade (%)</label>
-                  <input
-                    type="number"
-                    defaultValue="2"
-                    min="0.1"
-                    max="10"
-                    step="0.1"
-                    className="w-full mt-1 bg-gray-700 text-white p-2 rounded border border-gray-600"
-                  />
-                </div>
-                <div>
-                  <label className="text-gray-300 text-sm">Max Open Trades</label>
-                  <input
-                    type="number"
-                    defaultValue="3"
-                    min="1"
-                    max="10"
-                    className="w-full mt-1 bg-gray-700 text-white p-2 rounded border border-gray-600"
-                  />
-                </div>
-                <button className="w-full bg-green-600 hover:bg-green-700 text-white py-2 rounded-lg font-medium transition">
-                  Save Settings
-                </button>
-              </div>
+          <TabsContent value="tools" className="bg-gray-800 rounded-lg border border-gray-700 p-6">
+            <div className="text-center py-12 text-gray-400">
+              <Settings className="h-12 w-12 mx-auto mb-4 opacity-50" />
+              <p>Settings & Tools</p>
             </div>
           </TabsContent>
         </Tabs>
-
-        {/* Footer Info */}
-        <div className="mt-12 text-center text-gray-400 border-t border-gray-800 pt-6">
-          <p className="text-sm">
-            ✅ v2.1 Strategy Live • ✅ NITS Strategy Live • ✅ Paper Trading • ✅ Broker Integration Ready
-          </p>
-          <p className="text-xs text-gray-500 mt-2">
-            Last updated: {new Date().toLocaleTimeString()} | Vercel: Deployed
-          </p>
-        </div>
       </div>
     </div>
   );

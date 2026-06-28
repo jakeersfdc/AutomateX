@@ -1,0 +1,501 @@
+//@version=6
+indicator("NIFTY Institutional Dashboard Pro", overlay=true, max_labels_count=500, max_lines_count=500)
+
+// ============================================================
+// INPUT PARAMETERS
+// ============================================================
+
+// EMA Settings
+ema20Length = input.int(20, "EMA 20", minval=1)
+ema50Length = input.int(50, "EMA 50", minval=1)
+ema200Length = input.int(200, "EMA 200", minval=1)
+
+// Volume Settings
+volumeSMALength = input.int(20, "Volume SMA", minval=1)
+
+// Opening Range
+orStart = input.int(9, "OR Start Hour")
+orStartMin = input.int(15, "OR Start Minute")
+orEnd = input.int(9, "OR End Hour")
+orEndMin = input.int(30, "OR End Minute")
+
+// Trading Hours
+lunchStart = input.int(12, "Lunch Start Hour")
+lunchEnd = input.int(13, "Lunch End Hour")
+lunchEndMin = input.int(30, "Lunch End Minute")
+
+// Dashboard Settings
+showDashboard = input.bool(true, "Show Dashboard")
+dashboardSize = input.string("small", "Dashboard Size", options=["small", "normal", "large"])
+
+// Colors
+colorBullish = color.new(color.green, 0)
+colorBearish = color.new(color.red, 0)
+colorDailyPOC = color.new(color.blue, 0)
+colorWeeklyPOC = color.new(color.purple, 0)
+colorSuppRes = color.new(color.orange, 0)
+colorNoTrade = color.new(color.yellow, 80)
+
+// ============================================================
+// HELPER FUNCTIONS
+// ============================================================
+
+// Check if current time is in business hours
+f_isBusinessHours() =>
+    hour >= orStart and (hour < lunchStart or (hour == lunchStart and minute < lunchEndMin))
+
+// Check if current bar is in Opening Range
+f_isInOpeningRange() =>
+    (hour == orStart and minute >= orStartMin) or 
+    (hour == orEnd and minute < orEndMin)
+
+// Check if current time is lunch break
+f_isLunchTime() =>
+    hour >= lunchStart and hour < lunchEnd or (hour == lunchEnd and minute < lunchEndMin)
+
+// Check if last 30 minutes
+f_isLast30Min() =>
+    hour == 15 and minute >= 30
+
+// Calculate Volume SMA
+f_getVolumeSMA() =>
+    ta.sma(volume, volumeSMALength)
+
+// Classify Volume
+f_classifyVolume(currentVol, avgVol) =>
+    if currentVol > avgVol * 1.3
+        "Strong"
+    else if currentVol > avgVol * 0.7
+        "Normal"
+    else
+        "Weak"
+
+// Get VIX Level (simulated from INDIAVIX)
+f_getVIXLevel() =>
+    vixVal = ta.highest(high, 50) - ta.lowest(low, 50)
+    if vixVal > 100
+        "High"
+    else if vixVal > 40
+        "Normal"
+    else
+        "Low"
+
+// Calculate Daily POC
+f_getDailyPOC() =>
+    (ta.highest(high, 260) + ta.lowest(low, 260) + close) / 3
+
+// Calculate Weekly POC
+f_getWeeklyPOC() =>
+    (ta.highest(high, 1260) + ta.lowest(low, 1260) + close) / 3
+
+// Calculate VAH (Value Area High)
+f_getVAH() =>
+    poc = (ta.highest(high, 260) + ta.lowest(low, 260) + close) / 3
+    poc + (ta.highest(high, 260) - ta.lowest(low, 260)) * 0.34
+
+// Calculate VAL (Value Area Low)
+f_getVAL() =>
+    poc = (ta.highest(high, 260) + ta.lowest(low, 260) + close) / 3
+    poc - (ta.highest(high, 260) - ta.lowest(low, 260)) * 0.34
+
+// Get Previous Day High
+f_getPrevDayHigh() =>
+    ta.highest(high[260], 260)
+
+// Get Previous Day Low
+f_getPrevDayLow() =>
+    ta.lowest(low[260], 260)
+
+// Get Previous Day Close
+f_getPrevDayClose() =>
+    close[260]
+
+// Get Weekly High
+f_getWeeklyHigh() =>
+    ta.highest(high, 1260)
+
+// Get Weekly Low
+f_getWeeklyLow() =>
+    ta.lowest(low, 1260)
+
+// Detect Trend
+f_detectTrend(ema20, ema50, ema200, dailyPOC, weeklyPOC) =>
+    if close > dailyPOC and close > weeklyPOC and ema20 > ema50 and ema50 > ema200
+        "Bullish"
+    else if close < dailyPOC and close < weeklyPOC and ema20 < ema50 and ema50 < ema200
+        "Bearish"
+    else
+        "Neutral"
+
+// Get Profile Type
+f_getProfile(ema20, ema50, trend) =>
+    if trend == "Bullish"
+        "P"
+    else if trend == "Bearish"
+        "b"
+    else if ema20 == ema50
+        "D"
+    else
+        "I"
+
+// Detect Liquidity
+f_detectLiquidity(prevHigh, prevLow) =>
+    sweptHigh = high > prevHigh and close < prevHigh
+    sweptLow = low < prevLow and close > prevLow
+    
+    if sweptHigh
+        "BSL"
+    else if sweptLow
+        "SSL"
+    else
+        "None"
+
+// Get Opening Range High
+f_getORHigh() =>
+    var orHigh = 0.0
+    var orLow = 999999.0
+    var orCalculated = false
+    
+    if f_isInOpeningRange()
+        orHigh := math.max(orHigh, high)
+        orLow := math.min(orLow, low)
+        orCalculated := false
+    else if not orCalculated and hour > orEnd
+        orCalculated := true
+    
+    [orHigh, orLow]
+
+// Get Opening Range Low
+f_getORLow() =>
+    var orLow = 999999.0
+    
+    if f_isInOpeningRange()
+        orLow := math.min(orLow, low)
+    
+    orLow
+
+// Check Buy Conditions
+f_checkBuyCondition(price, dailyPOC, weeklyPOC, orHigh, prevDayHigh, ema20, ema50, ema200, volClass, vixLevel, profile, inVA) =>
+    price > dailyPOC and
+    price > weeklyPOC and
+    price > orHigh and
+    price > prevDayHigh and
+    ema20 > ema50 and
+    ema50 > ema200 and
+    volClass == "Strong" and
+    vixLevel != "High" and
+    profile != "D" and
+    not inVA
+
+// Check Sell Conditions
+f_checkSellCondition(price, dailyPOC, weeklyPOC, orLow, prevDayLow, ema20, ema50, ema200, volClass, vixLevel, profile, inVA) =>
+    price < dailyPOC and
+    price < weeklyPOC and
+    price < orLow and
+    price < prevDayLow and
+    ema20 < ema50 and
+    ema50 < ema200 and
+    volClass == "Strong" and
+    vixLevel != "Low" and
+    profile != "D" and
+    not inVA
+
+// Check Wait Conditions
+f_checkWaitCondition(inOR, inVA, volClass, profile) =>
+    inOR or inVA or volClass == "Weak" or profile == "D"
+
+// Calculate Stop Loss
+f_calculateStopLoss(isLong) =>
+    if isLong
+        ta.lowest(low, 3)
+    else
+        ta.highest(high, 3)
+
+// ============================================================
+// MAIN CALCULATIONS
+// ============================================================
+
+// EMAs
+ema20 = ta.ema(close, ema20Length)
+ema50 = ta.ema(close, ema50Length)
+ema200 = ta.ema(close, ema200Length)
+
+// Volume
+volSMA = f_getVolumeSMA()
+volClass = f_classifyVolume(volume, volSMA)
+
+// POC and Value Area
+dailyPOC = f_getDailyPOC()
+weeklyPOC = f_getWeeklyPOC()
+vah = f_getVAH()
+val = f_getVAL()
+
+// Daily Levels
+prevDayHigh = f_getPrevDayHigh()
+prevDayLow = f_getPrevDayLow()
+prevDayClose = f_getPrevDayClose()
+
+// Weekly Levels
+weeklyHigh = f_getWeeklyHigh()
+weeklyLow = f_getWeeklyLow()
+
+// Opening Range
+[orHigh, orLow] = f_getORHigh()
+
+// Support and Resistance
+resistance1 = prevDayHigh
+resistance2 = weeklyHigh
+resistance3 = vah
+
+support1 = prevDayLow
+support2 = weeklyLow
+support3 = val
+
+// Trend
+trend = f_detectTrend(ema20, ema50, ema200, dailyPOC, weeklyPOC)
+profile = f_getProfile(ema20, ema50, trend)
+
+// VIX
+vixLevel = f_getVIXLevel()
+
+// Liquidity
+liquidity = f_detectLiquidity(prevDayHigh, prevDayLow)
+
+// Opening Range Status
+inOR = f_isInOpeningRange()
+orStatus = if close > orHigh
+    "Breakout Up"
+else if close < orLow
+    "Breakout Down"
+else
+    "Inside"
+
+// Inside Value Area
+inVA = close > val and close < vah
+
+// Trend Display
+dailyTrend = if close > dailyPOC
+    "Up"
+else if close < dailyPOC
+    "Down"
+else
+    "Neutral"
+
+weeklyTrend = if close > weeklyPOC
+    "Up"
+else if close < weeklyPOC
+    "Down"
+else
+    "Neutral"
+
+// Stop Loss
+var lastSignal = ""
+var lastSignalBar = 0
+stopLossLong = f_calculateStopLoss(true)
+stopLossShort = f_calculateStopLoss(false)
+
+// Risk Reward
+riskLong = close - stopLossLong
+rewardLong = resistance3 - close
+rrLong = if riskLong > 0 then rewardLong / riskLong else 0.0
+
+riskShort = stopLossShort - close
+rewardShort = close - support3
+rrShort = if riskShort > 0 then rewardShort / riskShort else 0.0
+
+// ============================================================
+// SIGNAL GENERATION
+// ============================================================
+
+buySignal = false
+sellSignal = false
+waitSignal = false
+
+if not f_isLunchTime() and not f_isLast30Min() and f_isBusinessHours()
+    if f_checkBuyCondition(close, dailyPOC, weeklyPOC, orHigh, prevDayHigh, ema20, ema50, ema200, volClass, vixLevel, profile, inVA)
+        if lastSignal != "BUY" or lastSignalBar < bar_index - 10
+            buySignal := true
+            lastSignal := "BUY"
+            lastSignalBar := bar_index
+    
+    else if f_checkSellCondition(close, dailyPOC, weeklyPOC, orLow, prevDayLow, ema20, ema50, ema200, volClass, vixLevel, profile, inVA)
+        if lastSignal != "SELL" or lastSignalBar < bar_index - 10
+            sellSignal := true
+            lastSignal := "SELL"
+            lastSignalBar := bar_index
+    
+    else if f_checkWaitCondition(inOR, inVA, volClass, profile)
+        waitSignal := true
+        lastSignal := "WAIT"
+
+// Confidence calculation
+confidence = 0
+if buySignal
+    confidence := 85 + (volClass == "Strong" ? 5 : 0) + (vixLevel == "Normal" ? 4 : 0)
+else if sellSignal
+    confidence := 85 + (volClass == "Strong" ? 5 : 0) + (vixLevel == "Normal" ? 4 : 0)
+else if waitSignal
+    confidence := 50
+
+// ============================================================
+// PLOT PRICE LEVELS
+// ============================================================
+
+plot(ema20, "EMA 20", color=color.new(color.cyan, 0), linewidth=2)
+plot(ema50, "EMA 50", color=color.new(color.gray, 0), linewidth=2)
+plot(ema200, "EMA 200", color=color.new(color.white, 0), linewidth=2)
+
+plot(dailyPOC, "Daily POC", color=colorDailyPOC, linewidth=2, style=plot.style_dashed)
+plot(weeklyPOC, "Weekly POC", color=colorWeeklyPOC, linewidth=2, style=plot.style_dashed)
+
+plot(resistance1, "R1", color=color.new(colorSuppRes, 50), linewidth=1)
+plot(resistance2, "R2", color=color.new(colorSuppRes, 60), linewidth=1)
+plot(resistance3, "R3", color=color.new(colorSuppRes, 70), linewidth=1)
+
+plot(support1, "S1", color=color.new(colorSuppRes, 50), linewidth=1)
+plot(support2, "S2", color=color.new(colorSuppRes, 60), linewidth=1)
+plot(support3, "S3", color=color.new(colorSuppRes, 70), linewidth=1)
+
+plot(vah, "VAH", color=color.new(color.aqua, 70), linewidth=1, style=plot.style_dotted)
+plot(val, "VAL", color=color.new(color.aqua, 70), linewidth=1, style=plot.style_dotted)
+
+// Opening Range
+plot(orHigh, "OR High", color=color.new(color.lime, 70), linewidth=1, style=plot.style_stepline)
+plot(orLow, "OR Low", color=color.new(color.red, 70), linewidth=1, style=plot.style_stepline)
+
+// ============================================================
+// BACKGROUND COLORS
+// ============================================================
+
+bgColor = na
+if buySignal
+    bgColor := color.new(colorBullish, 90)
+else if sellSignal
+    bgColor := color.new(colorBearish, 90)
+else if waitSignal
+    bgColor := color.new(colorNoTrade, 90)
+
+bgcolor(bgColor)
+
+// ============================================================
+// SIGNALS AND ALERTS
+// ============================================================
+
+if buySignal
+    alert("BUY Signal - NIFTY at " + str.tostring(close, "#.##"), alert.freq_once_per_bar_close)
+    label.new(bar_index, high + 50, "BUY", color=colorBullish, textcolor=color.white, style=label.style_label_down, size=size.large)
+
+if sellSignal
+    alert("SELL Signal - NIFTY at " + str.tostring(close, "#.##"), alert.freq_once_per_bar_close)
+    label.new(bar_index, low - 50, "SELL", color=colorBearish, textcolor=color.white, style=label.style_label_up, size=size.large)
+
+if waitSignal and bar_index % 3 == 0
+    label.new(bar_index, close, "WAIT", color=colorNoTrade, textcolor=color.black, style=label.style_label_center, size=size.small)
+
+// ============================================================
+// DASHBOARD
+// ============================================================
+
+if showDashboard and barstate.islast
+
+    // Dashboard Size Settings
+    textSize = dashboardSize == "small" ? size.small : dashboardSize == "normal" ? size.normal : size.large
+    rowHeight = dashboardSize == "small" ? 1.2 : dashboardSize == "normal" ? 1.5 : 2.0
+
+    // Dashboard Background
+    table.new(position=position.top_right, columns=2, rows=20, bgcolor=color.new(color.black, 30), border_color=colorBullish, border_width=2)
+
+    var table dashTable = table.new(position=position.top_right, columns=2, rows=20, 
+                                     bgcolor=color.new(color.black, 40), border_color=colorBullish, border_width=2)
+
+    // Row 1: Title
+    table.cell(dashTable, 0, 0, "NIFTY PRO", text_size=size.large, bgcolor=colorBullish, text_color=color.white)
+    table.cell(dashTable, 1, 0, "DASHBOARD", text_size=size.large, bgcolor=colorBullish, text_color=color.white)
+
+    // Row 2: Trend
+    table.cell(dashTable, 0, 1, "Trend", text_size=textSize, bgcolor=color.gray)
+    trendColor = trend == "Bullish" ? colorBullish : trend == "Bearish" ? colorBearish : color.gray
+    table.cell(dashTable, 1, 1, trend, text_size=textSize, bgcolor=trendColor, text_color=color.white)
+
+    // Row 3: Strength
+    strength = math.round((confidence > 80 ? 85 : confidence > 70 ? 75 : confidence > 60 ? 65 : confidence > 50 ? 55 : 45))
+    table.cell(dashTable, 0, 2, "Strength", text_size=textSize, bgcolor=color.gray)
+    table.cell(dashTable, 1, 2, str.tostring(strength) + "%", text_size=textSize, bgcolor=color.gray, text_color=color.white)
+
+    // Row 4: Price
+    table.cell(dashTable, 0, 3, "Price", text_size=textSize, bgcolor=color.gray)
+    table.cell(dashTable, 1, 3, str.tostring(close, "#.##"), text_size=textSize, bgcolor=color.gray, text_color=color.white)
+
+    // Row 5: Daily POC
+    table.cell(dashTable, 0, 4, "Daily POC", text_size=textSize, bgcolor=color.gray)
+    table.cell(dashTable, 1, 4, str.tostring(dailyPOC, "#.##"), text_size=textSize, bgcolor=colorDailyPOC, text_color=color.white)
+
+    // Row 6: Weekly POC
+    table.cell(dashTable, 0, 5, "Weekly POC", text_size=textSize, bgcolor=color.gray)
+    table.cell(dashTable, 1, 5, str.tostring(weeklyPOC, "#.##"), text_size=textSize, bgcolor=colorWeeklyPOC, text_color=color.white)
+
+    // Row 7: Resistance
+    table.cell(dashTable, 0, 6, "Resistance", text_size=textSize, bgcolor=color.gray)
+    table.cell(dashTable, 1, 6, str.tostring(resistance1, "#.##"), text_size=textSize, bgcolor=colorSuppRes, text_color=color.white)
+
+    // Row 8: Support
+    table.cell(dashTable, 0, 7, "Support", text_size=textSize, bgcolor=color.gray)
+    table.cell(dashTable, 1, 7, str.tostring(support1, "#.##"), text_size=textSize, bgcolor=colorSuppRes, text_color=color.white)
+
+    // Row 9: Volume
+    table.cell(dashTable, 0, 8, "Volume", text_size=textSize, bgcolor=color.gray)
+    volColor = volClass == "Strong" ? colorBullish : volClass == "Normal" ? color.gray : colorBearish
+    table.cell(dashTable, 1, 8, volClass, text_size=textSize, bgcolor=volColor, text_color=color.white)
+
+    // Row 10: VIX
+    table.cell(dashTable, 0, 9, "VIX", text_size=textSize, bgcolor=color.gray)
+    vixColor = vixLevel == "High" ? colorBearish : vixLevel == "Normal" ? color.gray : colorBullish
+    table.cell(dashTable, 1, 9, vixLevel, text_size=textSize, bgcolor=vixColor, text_color=color.white)
+
+    // Row 11: Profile
+    table.cell(dashTable, 0, 10, "Profile", text_size=textSize, bgcolor=color.gray)
+    table.cell(dashTable, 1, 10, profile, text_size=textSize, bgcolor=color.gray, text_color=color.white)
+
+    // Row 12: Liquidity
+    table.cell(dashTable, 0, 11, "Liquidity", text_size=textSize, bgcolor=color.gray)
+    table.cell(dashTable, 1, 11, liquidity, text_size=textSize, bgcolor=color.gray, text_color=color.white)
+
+    // Row 13: Daily Trend
+    table.cell(dashTable, 0, 12, "Daily Trend", text_size=textSize, bgcolor=color.gray)
+    dailyTrendColor = dailyTrend == "Up" ? colorBullish : dailyTrend == "Down" ? colorBearish : color.gray
+    table.cell(dashTable, 1, 12, dailyTrend, text_size=textSize, bgcolor=dailyTrendColor, text_color=color.white)
+
+    // Row 14: Weekly Trend
+    table.cell(dashTable, 0, 13, "Weekly Trend", text_size=textSize, bgcolor=color.gray)
+    weeklyTrendColor = weeklyTrend == "Up" ? colorBullish : weeklyTrend == "Down" ? colorBearish : color.gray
+    table.cell(dashTable, 1, 13, weeklyTrend, text_size=textSize, bgcolor=weeklyTrendColor, text_color=color.white)
+
+    // Row 15: OR Status
+    table.cell(dashTable, 0, 14, "OR Status", text_size=textSize, bgcolor=color.gray)
+    table.cell(dashTable, 1, 14, orStatus, text_size=textSize, bgcolor=color.gray, text_color=color.white)
+
+    // Row 16: Risk Reward
+    rrDisplay = if buySignal then str.tostring(rrLong, "#.##") else if sellSignal then str.tostring(rrShort, "#.##") else "0.00"
+    table.cell(dashTable, 0, 15, "Risk Reward", text_size=textSize, bgcolor=color.gray)
+    table.cell(dashTable, 1, 15, rrDisplay, text_size=textSize, bgcolor=color.gray, text_color=color.white)
+
+    // Row 17: Signal
+    table.cell(dashTable, 0, 16, "Signal", text_size=textSize, bgcolor=color.gray)
+    signalText = buySignal ? "BUY" : sellSignal ? "SELL" : "WAIT"
+    signalColor = buySignal ? colorBullish : sellSignal ? colorBearish : colorNoTrade
+    table.cell(dashTable, 1, 16, signalText, text_size=textSize, bgcolor=signalColor, text_color=color.white)
+
+    // Row 18: Confidence
+    table.cell(dashTable, 0, 17, "Confidence", text_size=textSize, bgcolor=color.gray)
+    confColor = confidence > 80 ? colorBullish : confidence > 60 ? color.gray : colorBearish
+    table.cell(dashTable, 1, 17, str.tostring(confidence, "##") + "%", text_size=textSize, bgcolor=confColor, text_color=color.white)
+
+    // Row 19: Stop Loss
+    slDisplay = if buySignal then str.tostring(stopLossLong, "#.##") else if sellSignal then str.tostring(stopLossShort, "#.##") else "0.00"
+    table.cell(dashTable, 0, 18, "Stop Loss", text_size=textSize, bgcolor=color.gray)
+    table.cell(dashTable, 1, 18, slDisplay, text_size=textSize, bgcolor=color.gray, text_color=color.white)
+
+    // Row 20: Target
+    targetDisplay = if buySignal then str.tostring(resistance3, "#.##") else if sellSignal then str.tostring(support3, "#.##") else "0.00"
+    table.cell(dashTable, 0, 19, "Target", text_size=textSize, bgcolor=color.gray)
+    table.cell(dashTable, 1, 19, targetDisplay, text_size=textSize, bgcolor=color.gray, text_color=color.white)

