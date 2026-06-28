@@ -750,7 +750,8 @@ async def get_signal(market_id: str):
         if market_id not in market_data:
             return {"error": "Market not found"}
         
-        md = market_data[market_id]
+        # Regenerate data to ensure fresh prices (fixes stale cache issues)
+        md = MarketData(market_id)
         
         # Fallback to simple signal generation if analysis fails
         try:
