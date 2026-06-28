@@ -4,6 +4,7 @@ Production-Ready Backend with Real Market Data
 """
 
 from fastapi import FastAPI, WebSocket
+from fastapi.responses import HTMLResponse
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 import asyncio
@@ -604,6 +605,16 @@ async def websocket_endpoint(websocket: WebSocket, market_id: str):
     except Exception as e:
         logger.error(f"WebSocket error: {e}")
         await websocket.close()
+
+@app.get("/")
+async def root():
+    """Serve the frontend HTML dashboard"""
+    try:
+        with open("algo_dashboard_frontend.html", "r") as f:
+            content = f.read()
+        return HTMLResponse(content=content)
+    except FileNotFoundError:
+        return {"error": "Frontend not found", "available": "/api/health, /api/signal/{market_id}, /api/markets"}
 
 if __name__ == "__main__":
     import uvicorn
