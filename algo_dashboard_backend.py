@@ -98,16 +98,21 @@ class MarketData:
             data = yf.download(ticker, period="1y", progress=False)
             
             if data is not None and len(data) > 0:
+                # Handle multi-index columns from yfinance
+                if isinstance(data.columns, pd.MultiIndex):
+                    # Single ticker returns multi-index (Close, ticker), (High, ticker), etc.
+                    data.columns = [col[0] if isinstance(col, tuple) else col for col in data.columns]
+                
                 # Get last 'periods' candles
                 data = data.tail(periods)
                 
                 for _, row in data.iterrows():
-                    if pd.notna(row['Open']) and pd.notna(row['Close']):
+                    if pd.notna(row.get('Open', 0)) and pd.notna(row.get('Close', 0)):
                         self.add_candle(
-                            float(row['Open']),
-                            float(row['High']),
-                            float(row['Low']),
-                            float(row['Close']),
+                            float(row.get('Open', 0)),
+                            float(row.get('High', 0)),
+                            float(row.get('Low', 0)),
+                            float(row.get('Close', 0)),
                             int(row.get('Volume', 0)),
                             0
                         )
