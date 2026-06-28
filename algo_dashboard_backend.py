@@ -530,22 +530,24 @@ async def get_signal(market_id: str):
             return {"error": "Market not found"}
         
         md = market_data[market_id]
+        logger.info(f"Analyzing {market_id}: {len(md.price_history)} candles")
         signal = strategy_engine.analyze(md)
+        logger.info(f"Signal generated: {signal.type.value} @ {signal.price}")
         
         return {
             "market": market_id,
             "signal": signal.type.value,
-            "price": round(signal.price, 2),
-            "confidence": signal.confidence,
-            "entry": round(signal.entry, 2),
-            "target": round(signal.target, 2),
-            "stopLoss": round(signal.stop_loss, 2),
-            "riskReward": round(signal.risk_reward, 2),
-            "reason": signal.reason,
+            "price": float(signal.price),
+            "confidence": int(signal.confidence),
+            "entry": float(signal.entry),
+            "target": float(signal.target),
+            "stopLoss": float(signal.stop_loss),
+            "riskReward": float(round(signal.risk_reward, 2)),
+            "reason": str(signal.reason),
             "timestamp": signal.timestamp.isoformat()
         }
     except Exception as e:
-        logger.error(f"Error in /api/signal/{market_id}: {e}")
+        logger.error(f"Error in /api/signal/{market_id}: {e}", exc_info=True)
         return {"error": str(e), "market": market_id}
 
 @app.get("/api/dashboard")
