@@ -63,35 +63,35 @@ class MarketData:
         """Generate sample market data for testing with realistic NIFTY 50 stocks"""
         import random
         
-        # Realistic base prices for NIFTY 50 stocks and indices
+        # Realistic base prices for NIFTY 50 stocks and indices (Friday close prices)
         base_prices = {
             # Indices
-            "NIFTY": 24850,
-            "BANKNIFTY": 51000,
+            "NIFTY": 24056.00,
+            "BANKNIFTY": 49875.25,
             # Top NIFTY 50 Stocks
-            "RELIANCE": 3150,
-            "TCS": 3850,
-            "INFY": 2940,
-            "HDFC": 2620,
-            "ICICIBANK": 1240,
-            "WIPRO": 425,
-            "AXISBANK": 1125,
-            "LT": 2680,
-            "MARUTI": 9850,
-            "SUNPHARMA": 1845,
-            "ITC": 425,
-            "BAJAJFINSV": 1680,
-            "HCLTECH": 1925,
-            "ASIAPAINT": 3480,
-            "DMARKT": 6320,
-            "POWERGRID": 285,
-            "ULTRACEMCO": 11280,
-            "NTPC": 325,
-            "SBILIFE": 1520,
-            "LTIM": 5840,
+            "RELIANCE": 3078.50,
+            "TCS": 3756.00,
+            "INFY": 2862.75,
+            "HDFC": 2548.00,
+            "ICICIBANK": 1205.50,
+            "WIPRO": 413.00,
+            "AXISBANK": 1095.00,
+            "LT": 2608.50,
+            "MARUTI": 9580.00,
+            "SUNPHARMA": 1795.50,
+            "ITC": 413.75,
+            "BAJAJFINSV": 1635.50,
+            "HCLTECH": 1872.00,
+            "ASIAPAINT": 3385.50,
+            "DMARKT": 6150.00,
+            "POWERGRID": 277.50,
+            "ULTRACEMCO": 10975.00,
+            "NTPC": 316.25,
+            "SBILIFE": 1479.50,
+            "LTIM": 5680.50,
             # Crypto & Forex
-            "BTCUSD": 67500,
-            "EURUSD": 1.0850
+            "BTCUSD": 65750.00,
+            "EURUSD": 1.0825
         }
         
         base_price = base_prices.get(self.symbol, 100)
