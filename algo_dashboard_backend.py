@@ -59,15 +59,78 @@ class MarketData:
         self.alerts = []
         self._generate_sample_data()  # Generate initial data
         
+    def _fetch_real_market_data(self, symbol: str, periods: int = 200):
+        """Fetch real market data from yfinance for live prices"""
+        import yfinance as yf
+        
+        # Map symbols to yfinance tickers
+        ticker_map = {
+            "NIFTY": "^NSEI",
+            "BANKNIFTY": "^NSEBANK",
+            "RELIANCE": "RELIANCE.NS",
+            "TCS": "TCS.NS",
+            "INFY": "INFY.NS",
+            "HDFC": "HDFC.NS",
+            "ICICIBANK": "ICICIBANK.NS",
+            "WIPRO": "WIPRO.NS",
+            "AXISBANK": "AXISBANK.NS",
+            "LT": "LT.NS",
+            "MARUTI": "MARUTI.NS",
+            "SUNPHARMA": "SUNPHARMA.NS",
+            "ITC": "ITC.NS",
+            "BAJAJFINSV": "BAJAJFINSV.NS",
+            "HCLTECH": "HCLTECH.NS",
+            "ASIAPAINT": "ASIANPAINT.NS",
+            "DMARKT": "DMART.NS",
+            "POWERGRID": "POWERGRID.NS",
+            "ULTRACEMCO": "ULTRACEMCO.NS",
+            "NTPC": "NTPC.NS",
+            "SBILIFE": "SBILIFE.NS",
+            "LTIM": "LTIM.NS",
+            "BTCUSD": "BTC-USD",
+            "EURUSD": "EURUSD=X"
+        }
+        
+        ticker = ticker_map.get(symbol, symbol)
+        
+        try:
+            # Fetch real market data for last 200 days
+            data = yf.download(ticker, period="1y", progress=False)
+            
+            if data is not None and len(data) > 0:
+                # Get last 'periods' candles
+                data = data.tail(periods)
+                
+                for _, row in data.iterrows():
+                    if pd.notna(row['Open']) and pd.notna(row['Close']):
+                        self.add_candle(
+                            float(row['Open']),
+                            float(row['High']),
+                            float(row['Low']),
+                            float(row['Close']),
+                            int(row.get('Volume', 0)),
+                            0
+                        )
+                return True
+        except Exception as e:
+            # Fall back to sample data if yfinance fails
+            pass
+        
+        return False
+        
     def _generate_sample_data(self):
         """Generate sample market data for testing with realistic NIFTY 50 stocks"""
         import random
         
-        # Realistic base prices for NIFTY 50 stocks and indices (Friday close prices)
+        # Try to fetch real data first
+        if self._fetch_real_market_data(self.symbol):
+            return
+        
+        # Fallback: Generate realistic base prices (Friday close prices from Groww.in screenshot)
         base_prices = {
             # Indices
             "NIFTY": 24056.00,
-            "BANKNIFTY": 49875.25,
+            "BANKNIFTY": 58177.05,
             # Top NIFTY 50 Stocks
             "RELIANCE": 3078.50,
             "TCS": 3756.00,
