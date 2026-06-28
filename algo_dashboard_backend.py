@@ -11,6 +11,7 @@ import asyncio
 import json
 import pandas as pd
 import numpy as np
+import random
 from datetime import datetime, timedelta
 from typing import Dict, List, Optional
 import aiohttp
@@ -56,6 +57,30 @@ class MarketData:
         self.volume_history = []
         self.oi_history = []
         self.alerts = []
+        self._generate_sample_data()  # Generate initial data
+        
+    def _generate_sample_data(self):
+        """Generate sample market data for testing"""
+        import random
+        base_prices = {
+            "NIFTY": 23500,
+            "BANKNIFTY": 48000,
+            "BTCUSD": 65000,
+            "EURUSD": 1.09
+        }
+        base_price = base_prices.get(self.symbol, 100)
+        
+        # Generate 200 candles of sample data
+        for i in range(200):
+            close = base_price + random.uniform(-500, 500)
+            open_ = base_price + random.uniform(-500, 500)
+            high = max(open_, close) + random.uniform(0, 300)
+            low = min(open_, close) - random.uniform(0, 300)
+            volume = random.randint(1000000, 10000000)
+            oi = random.randint(100000, 500000)
+            
+            self.add_candle(open_, high, low, close, volume, oi)
+            base_price = close
         
     def add_candle(self, open_: float, high: float, low: float, close: float, volume: int, oi: int = 0):
         self.price_history.append({
